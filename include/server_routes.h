@@ -5,18 +5,11 @@ void setupWeb()
       {
     String ssid = server.arg("ssid");
     String password = server.arg("password");
-
-    int ssidLen = ssid.length() + 1;
-    int passLen = password.length() + 1;
-    char ssidArr[ssidLen];
-    char passArr[passLen];
-
-    ssid.toCharArray(ssidArr, ssidLen);
-    password.toCharArray(passArr, passLen);
-
+    id = ssid.c_str();
+    pass = password.c_str();
     try
     {
-      writeWifiEEPROM(ssidArr, passArr);
+      writeWifiEEPROM(id, pass);
       server.send(200, "text/plain", "OK");
     }
     catch (const std::length_error &e)
@@ -28,20 +21,19 @@ void setupWeb()
       server.send(400, "application/json", error);
     } });
 
-  server.on("/deviceName", HTTP_POST, []()
-            {
-    String name = server.arg("deviceName");
-    int nameLen = name.length() + 1;
-    char nameArr[nameLen];
-
-    name.toCharArray(nameArr, nameLen);
-
+  server.on(
+      "/wifi", HTTP_GET, []()
+      {
     try
     {
-      writeDeviceNameEEPROM(nameArr);
-      server.send(200, "text/plain", "OK");
+      StaticJsonDocument<256> root;
+      root["password"] = pass;
+      root["ssid"] = id;
+      String result;
+      serializeJsonPretty(root, result);
+      server.send(200, "application/json", result);
     }
-    catch (const std::length_error &e)
+    catch (const std::exception &e)
     {
       StaticJsonDocument<32> root;
       root["error"] = e.what();

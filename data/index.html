@@ -31,63 +31,61 @@
           <input id="ssid" type="text" maxlength="50" />
           <label class="sub-title" for="password">Password</label>
           <input id="password" type="password" maxlength="50" />
+          <div class="content-block content-block--flex">
+            <label class="label" for="checkbox">Show Password</label>
+            <input id="checkbox" type="checkbox" onclick="showPassword()" />
+          </div>
         </form>
         <button id="wifi-button" class="btn btn-secondary btn-sm" type="submit">
           Save Wifi
         </button>
       </div>
-      <div class="content-block">
-        <h3 class="title">Device Name</h3>
-        <form>
-          <input id="deviceName" type="text" maxlength="50" />
-        </form>
-        <button id="name-button" class="btn btn-secondary btn-sm" type="submit">
-          Save Name
-        </button>
-      </div>
     </div>
     <script>
+      window.onload = function (event) {
+        fetch(`${window.location.origin}/wifi`, {
+          method: "GET"
+        })
+          .then((response) => response.json())
+          .then((data) => {
+            document.getElementById("ssid").value = data.ssid;
+            document.getElementById("password").value = data.password;
+          })
+          .catch((error) => {
+            setError(error);
+            alert("Unable to get wifi credentials");
+          });
+      };
       document
         .getElementById("wifi-button")
         .addEventListener("click", function (event) {
           event.preventDefault();
           var ssid = document.getElementById("ssid").value;
           var pass = document.getElementById("password").value;
+          document.getElementById("wifi-button").disabled = true;
           fetch(`${window.location.origin}/wifi?ssid=${ssid}&pass=${pass}`, {
             method: "POST"
           })
             .then((response) => {
               if (response.status === 200) {
+                document.getElementById("wifi-button").disabled = false;
                 alert("Wifi credentials set!");
               }
             })
             .catch((error) => {
               setError(error);
+              document.getElementById("wifi-button").disabled = false;
               alert("Unable to set wifi credentials");
             });
         });
-      document
-        .getElementById("name-button")
-        .addEventListener("click", function (event) {
-          event.preventDefault();
-          var deviceName = document.getElementById("deviceName").value;
-          console.log(deviceName);
-          fetch(
-            `${window.location.origin}/deviceName?deviceName=${deviceName}`,
-            {
-              method: "POST"
-            }
-          )
-            .then((response) => {
-              if (response.status === 200) {
-                alert("Device name set!");
-              }
-            })
-            .catch((error) => {
-              setError(error);
-              alert("Unable to set device name");
-            });
-        });
+      function showPassword() {
+        var x = document.getElementById("password");
+        if (x.type === "password") {
+          x.type = "text";
+        } else {
+          x.type = "password";
+        }
+      }
       function setError(error) {
         document.getElementById("error").innerHTML = `Error: ${error.message}`;
       }

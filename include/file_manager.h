@@ -29,23 +29,19 @@ String getContentType(String filename)
 
 bool handleFileRead(String path)
 { // send the right file to the client (if it exists)
-  if (path.endsWith("/") && !apmode)
+  if (path.endsWith("/"))
   {
     path += "index.html"; // If a folder is requested, send the index file
-  }
-  else if (path.endsWith("/") && apmode)
-  {
-    path += "connect.html";
   }
   String contentType = getContentType(path); // Get the MIME type
   String pathWithGz = path + ".gz";
   if (SPIFFS.exists(pathWithGz) || SPIFFS.exists(path))
   {
-    if (SPIFFS.exists(pathWithGz))                      // If there's a compressed version available
-      path += ".gz";                                    // If the file exists
-    File file = SPIFFS.open(path, "r");                 // Open it
-    size_t sent = server.streamFile(file, contentType); // And send it to the client
-    file.close();                                       // Then close the file again
+    if (SPIFFS.exists(pathWithGz))        // If there's a compressed version available
+      path += ".gz";                      // If the file exists
+    File file = SPIFFS.open(path, "r");   // Open it
+    server.streamFile(file, contentType); // And send it to the client
+    file.close();                         // Then close the file again
     return true;
   }
   return false; // If the file doesn't exist, return false

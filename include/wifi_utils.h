@@ -8,8 +8,8 @@ String getHostName()
 
 // AP mode password
 const char WiFiAPPSK[] = "ledwifi32";
-const char *id;
-const char *pass;
+const char *id = ssid;
+const char *pass = password;
 
 void WiFiStationConnected(WiFiEvent_t event, WiFiEventInfo_t info)
 {
@@ -61,14 +61,9 @@ void setupWifi()
     if (EEPROM.read(WIFI_SET) == 1)
     {
       int idIndex = EEPROM.read(SSID_INDEX);
-      id = readString(idIndex);
+      id = EEPROM.readString(idIndex).c_str();
       int passwordIndex = EEPROM.read(PASS_INDEX);
-      pass = readString(passwordIndex);
-    }
-    else
-    {
-      id = ssid;
-      pass = password;
+      pass = EEPROM.readString(passwordIndex).c_str();
     }
     WiFi.mode(WIFI_STA);
     WiFi.disconnect(true);

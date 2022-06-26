@@ -82,7 +82,7 @@ void IRAM_ATTR POWER_ISR()
       {
         for (int i = 0; i < 512; i++)
         {
-          EEPROM.write(i, 255);
+          EEPROM.write(i, 0);
         }
         EEPROM.write(AP_SET, 0);
         RESET = true;
@@ -91,29 +91,6 @@ void IRAM_ATTR POWER_ISR()
     last_interrupt_time = interrupt_time;
   }
 }
-
-// void displaySimpleText(const char *text)
-// {
-//   display.setRotation(1);
-//   display.setFont(&FreeMonoBold9pt7b);
-//   display.setTextColor(GxEPD_BLACK);
-//   int16_t tbx, tby;
-//   uint16_t tbw, tbh;
-//   display.getTextBounds(text, 0, 0, &tbx, &tby, &tbw, &tbh);
-//   // center the bounding box by transposition of the origin:
-//   uint16_t x = ((display.width() - tbw) / 2) - tbx;
-//   uint16_t y = ((display.height() - tbh) / 2) - tby;
-//   display.setFullWindow();
-//   display.firstPage();
-//   do
-//   {
-//     display.fillScreen(GxEPD_WHITE);
-//     display.setCursor(x, y);
-//     display.print(text);
-//   } while (display.nextPage());
-// }
-
-// const char HelloWorld[] = "Test";
 
 void displaySimpleText(const char *text)
 {
@@ -151,6 +128,7 @@ void displaySimpleText(const char *text)
 
 void setup()
 {
+
   if (!EEPROM.begin(512))
   {
     Serial.println("Failed to initialize EEPROM!");
@@ -160,7 +138,8 @@ void setup()
   while (!Serial)
   {
   }
-  // apmode = EEPROM.read(AP_SET);
+  EEPROM.commit();
+  apmode = EEPROM.read(AP_SET);
   setupWifi();
   // SPIFFS.format(); // Prevents SPIFFS_ERR_NOT_A_FS
   SPIFFS.begin(); // Start the SPI Flash Files System
@@ -189,6 +168,6 @@ void loop()
   }
   else
   {
-    displaySimpleText("AP Mode");
+    displaySimpleText(getHostName().c_str());
   }
 };

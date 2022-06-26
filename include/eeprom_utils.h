@@ -1,4 +1,4 @@
-int writeString(uint8_t addr, char data[])
+int writeString(uint8_t addr, const char data[])
 {
   int _size = strlen(data);
   for (int i = 0; i < _size; i++)
@@ -10,7 +10,7 @@ int writeString(uint8_t addr, char data[])
   return _size + 1;
 }
 
-char *readString(uint8_t addr)
+const char *readString(uint8_t addr)
 {
   static char data[100]; // Max 100 Bytes
   int len = 0;
@@ -25,7 +25,7 @@ char *readString(uint8_t addr)
   return data;
 }
 
-void writeWifiEEPROM(char ssid[], char pass[])
+void writeWifiEEPROM(const char ssid[], const char pass[])
 {
   int index = 100;
   if (strlen(ssid) > 50 || strlen(pass) > 50)
