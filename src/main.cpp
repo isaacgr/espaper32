@@ -5,30 +5,30 @@
 #include <ArduinoJson.h>
 #include <FS.h>
 #include <SPIFFS.h>
+#include <HTTPClient.h>
 
 #include <GxEPD2_BW.h>
-#include <GxEPD2_3C.h>
+#include <Fonts/Roboto_Regular4pt7b.h>
+#include <Fonts/Roboto_Regular6pt7b.h>
 #include <Fonts/FreeMonoBold9pt7b.h>
 
-#define MAX_DISPLAY_BUFFER_SIZE 131072ul // e.g. half of available ram
-#define MAX_HEIGHT(EPD) (EPD::HEIGHT <= MAX_DISPLAY_BUFFER_SIZE / (EPD::WIDTH / 8) ? EPD::HEIGHT : MAX_DISPLAY_BUFFER_SIZE / (EPD::WIDTH / 8))
+// #define MAX_DISPLAY_BUFFER_SIZE 131072ul // e.g. half of available ram
+// #define MAX_HEIGHT(EPD) (EPD::HEIGHT <= MAX_DISPLAY_BUFFER_SIZE / (EPD::WIDTH / 8) ? EPD::HEIGHT : MAX_DISPLAY_BUFFER_SIZE / (EPD::WIDTH / 8))
 
 #define POWER_BUTTON 4
-#define EEPROM_SIZE 12
 
-// select the display class and display driver class in the following file (new style):
-// #include "GxEPD2_display_selection_new_style.h"
-
-// alternately you can copy the constructor from GxEPD2_display_selection.h or GxEPD2_display_selection_added.h to here
-// e.g. for Wemos D1 mini:
-// GxEPD2_BW<GxEPD2_154_D67, GxEPD2_154_D67::HEIGHT> display(GxEPD2_154_D67(/*CS=D8*/ SS, /*DC=D3*/ 0, /*RST=D4*/ 2, /*BUSY=D2*/ 4)); // GDEH0154D67
-GxEPD2_BW<GxEPD2_270, MAX_HEIGHT(GxEPD2_270)> display(GxEPD2_270(/*CS=*/SS, /*DC=*/17, /*RST=*/16, /*BUSY=*/4)); // GDEW027W3
+GxEPD2_BW<GxEPD2_270, GxEPD2_270::HEIGHT> display(GxEPD2_270(/*CS=5*/ SS, /*DC=*/17, /*RST=*/16, /*BUSY=*/4)); // GDEW027W3
 
 WebServer server(80);
 uint8_t g_Power = 1;
 uint8_t apmode = 0;
 bool writeFields = false;
 bool RESET = false;
+bool GET = false;
+int TIMER_COUNTER = 0;
+int GET_PERIOD = 600; // frequency to post, in seconds
+
+String quotesUrl = "https://api.quotable.io/random?tags=technology|success|business|inspirational|education|future|science&maxLength=90";
 
 // EEPROM addresses for state
 const uint8_t SSID_INDEX = 1;
@@ -43,6 +43,16 @@ const uint8_t AP_SET = 6;
 #include <wifi_utils.h>
 #include <file_manager.h>
 #include <server_routes.h>
+
+void IRAM_ATTR timer1_ISR(void)
+{
+  TIMER_COUNTER++;
+  if (TIMER_COUNTER == 600) // update every 10 mins
+  {
+    GET = true;
+    TIMER_COUNTER = 0;
+  }
+}
 
 void IRAM_ATTR POWER_ISR()
 {
@@ -92,22 +102,20 @@ void IRAM_ATTR POWER_ISR()
   }
 }
 
-void displaySimpleText(const char *text)
+void printWifiStatus(const char *text)
 {
-
-  static int16_t bbx = 400;
-  static int16_t bby = 300;
+  static int16_t bbx = 264;
+  static int16_t bby = 176;
   static uint16_t bbw = 0;
   static uint16_t bbh = 0;
   display.setRotation(1);
-  display.setFont(&FreeMonoBold9pt7b);
+  display.setFont(&Roboto_Regular4pt7b);
   display.setTextColor(GxEPD_BLACK);
   int16_t tbx, tby;
   uint16_t tbw, tbh;
   display.getTextBounds(text, 0, 0, &tbx, &tby, &tbw, &tbh);
-  // place the bounding box
-  int16_t tx = max(0, ((display.width() - tbw) / 2));
-  int16_t ty = max(0, (display.height() * 3 / 4 - tbh / 2));
+  int16_t tx = max(0, ((display.width() - tbw)));
+  int16_t ty = max(0, (display.height() * 95 / 100 - tbh / 2));
   bbx = min(bbx, tx);
   bby = min(bby, ty);
   bbw = max(bbw, tbw);
@@ -116,7 +124,6 @@ void displaySimpleText(const char *text)
   uint16_t x = bbx - tbx;
   uint16_t y = bby - tby;
   display.setPartialWindow(bbx, bby, bbw, bbh);
-
   display.firstPage();
   do
   {
@@ -124,6 +131,120 @@ void displaySimpleText(const char *text)
     display.setCursor(x, y);
     display.print(text);
   } while (display.nextPage());
+}
+
+void printQuoteAuthor(const char *author)
+{
+  static int16_t bbx = 264;
+  static int16_t bby = 176;
+  static uint16_t bbw = 0;
+  static uint16_t bbh = 0;
+  display.setRotation(1);
+  display.setFont(&Roboto_Regular6pt7b);
+  display.setTextColor(GxEPD_BLACK);
+  int16_t tbx, tby;
+  uint16_t tbw, tbh;
+  display.getTextBounds(author, 0, 0, &tbx, &tby, &tbw, &tbh);
+  int16_t tx = max(0, ((display.width() - tbw) / 2));
+  int16_t ty = max(0, (display.height() * 80 / 100 - tbh / 2));
+  bbx = min(bbx, tx);
+  bby = min(bby, ty);
+  bbw = max(bbw, tbw);
+  bbh = max(bbh, tbh);
+  // calculate the cursor
+  uint16_t x = bbx - tbx;
+  uint16_t y = bby - tby;
+  display.setPartialWindow(bbx, bby, bbw, bbh);
+  display.firstPage();
+  do
+  {
+    display.fillScreen(GxEPD_WHITE);
+    display.setCursor(x, y);
+    display.print(author);
+  } while (display.nextPage());
+}
+
+void printQuoteContent(const char *content)
+{
+  Serial.println(content);
+  static int16_t bbx = 264;
+  static int16_t bby = 176;
+  static uint16_t bbw = 0;
+  static uint16_t bbh = 0;
+  display.setRotation(1);
+  display.setFont(&Roboto_Regular6pt7b);
+  display.setTextColor(GxEPD_BLACK);
+  int16_t tbx, tby;
+  uint16_t tbw, tbh;
+  display.getTextBounds(content, 0, 0, &tbx, &tby, &tbw, &tbh);
+  int16_t tx = max(0, ((display.width() - tbw) / 2));
+  int16_t ty = max(0, (display.height() * 60 / 100 - tbh / 2));
+  bbx = min(bbx, tx);
+  bby = min(bby, ty);
+  bbw = max(bbw, tbw);
+  bbh = max(bbh, tbh);
+  // calculate the cursor
+  uint16_t x = bbx - tbx;
+  uint16_t y = bby - tby;
+  display.setPartialWindow(bbx, bby, bbw, bbh);
+  display.firstPage();
+  do
+  {
+    display.fillScreen(GxEPD_WHITE);
+    display.setCursor(x, y);
+    display.println(content);
+  } while (display.nextPage());
+}
+
+void getQuote()
+{
+
+  HTTPClient http;
+  http.begin(quotesUrl.c_str());
+  int httpResponseCode = http.GET();
+  if (httpResponseCode > 0)
+  {
+    StaticJsonDocument<512> doc;
+    DeserializationError error = deserializeJson(doc, http.getStream());
+
+    if (error)
+    {
+      Serial.print(F("deserializeJson() failed: "));
+      Serial.println(error.f_str());
+      return;
+    }
+
+    std::string contentString = doc["content"];
+    const char *author = doc["author"];
+
+    char contentArray[contentString.size() + 1];
+    strcpy(contentArray, contentString.c_str());
+
+    bool previousSpace = false;
+    for (int i = 0; i < sizeof(contentArray); i++)
+    {
+      if (i > 35)
+      {
+        if (contentArray[i] == ' ' && !previousSpace)
+        {
+          contentArray[i] = '\n';
+          previousSpace = true;
+        }
+      }
+    }
+
+    delay(1100);
+    printQuoteAuthor(author);
+    delay(1100);
+    printQuoteContent(contentArray);
+  }
+  else
+  {
+    Serial.print("Error code: ");
+    Serial.println(httpResponseCode);
+  }
+  http.end();
+  GET = false;
 }
 
 void setup()
@@ -138,7 +259,7 @@ void setup()
   while (!Serial)
   {
   }
-  EEPROM.commit();
+  GET = true;
   apmode = EEPROM.read(AP_SET);
   setupWifi();
   // SPIFFS.format(); // Prevents SPIFFS_ERR_NOT_A_FS
@@ -153,21 +274,33 @@ void setup()
 
 void loop()
 {
+  if (RESET)
+  {
+    RESET = !RESET;
+    EEPROM.commit();
+    ESP.restart();
+  }
   server.handleClient();
   if (apmode == 0)
   {
     if (WiFi.status() == WL_CONNECTED)
     {
-      const char *ip = WiFi.localIP().toString().c_str();
-      displaySimpleText(ip);
+      String ip = WiFi.localIP().toString();
+      String ipString = "WiFi addr: " + ip;
+      printWifiStatus(ipString.c_str());
+      if (GET)
+      {
+        getQuote();
+      }
     }
     else
     {
-      displaySimpleText("No wifi");
+      printWifiStatus("No WiFi");
     }
   }
   else
   {
-    displaySimpleText(getHostName().c_str());
+    String statusString = "AP Addr: " + getHostName();
+    printWifiStatus(statusString.c_str());
   }
 };
