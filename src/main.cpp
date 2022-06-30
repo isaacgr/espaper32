@@ -18,7 +18,7 @@
 // #define MAX_DISPLAY_BUFFER_SIZE 131072ul // e.g. half of available ram
 // #define MAX_HEIGHT(EPD) (EPD::HEIGHT <= MAX_DISPLAY_BUFFER_SIZE / (EPD::WIDTH / 8) ? EPD::HEIGHT : MAX_DISPLAY_BUFFER_SIZE / (EPD::WIDTH / 8))
 
-#define POWER_BUTTON 4
+#define POWER_BUTTON 21
 
 GxEPD2_BW<GxEPD2_270, GxEPD2_270::HEIGHT> display(GxEPD2_270(/*CS=5*/ SS, /*DC=*/17, /*RST=*/16, /*BUSY=*/4)); // GDEW027W3
 
@@ -29,6 +29,7 @@ bool RESET = false;
 bool GET = false;
 int TIMER_COUNTER = 0;
 int GET_PERIOD = 600; // frequency to post, in seconds
+hw_timer_t *timer = NULL;
 
 const char *quotesUrl = "https://api.quotable.io/random?tags=technology|success|business|inspirational|education|future|science|famout-quotes|life|literature|wisdom&maxLength=45";
 String stockUrl = "https://query1.finance.yahoo.com/v8/finance/chart/";
@@ -51,7 +52,7 @@ const uint8_t AP_SET = 6;
 void IRAM_ATTR timer1_ISR(void)
 {
   TIMER_COUNTER++;
-  if (TIMER_COUNTER == 600) // update every 10 mins
+  if (TIMER_COUNTER == GET_PERIOD) // update every 10 mins
   {
     GET = true;
     TIMER_COUNTER = 0;
@@ -200,7 +201,6 @@ void getStocks(String ticker, xPosition xpos)
     Serial.println(httpResponseCode);
   }
   http.end();
-  GET = false;
 }
 
 void getQuote()
@@ -230,7 +230,7 @@ void getQuote()
     // {
     //   contentArray[i] = contentString[i];
     // }
-    printToDisplay(author, 80, &Roboto_Regular6pt7b);
+    printToDisplay(author, 82, &Roboto_Regular6pt7b);
     printToDisplay(contentString, 70, &Roboto_LightItalic6pt7b);
   }
   else
@@ -239,7 +239,6 @@ void getQuote()
     Serial.println(httpResponseCode);
   }
   http.end();
-  GET = false;
 }
 
 void setup()
@@ -263,8 +262,15 @@ void setup()
   server.enableCORS();
   setupWeb();
   display.init(115200);
-  delay(1000);
-  Serial.println("setup done");
+
+  // Setup interrupts
+  noInterrupts();
+  attachInterrupt(POWER_BUTTON, POWER_ISR, CHANGE);
+  timer = timerBegin(0, 80, true);
+  timerAttachInterrupt(timer, &timer1_ISR, true);
+  timerAlarmWrite(timer, 1000000, true);
+  timerAlarmEnable(timer);
+  interrupts();
 }
 
 void loop()
@@ -289,6 +295,7 @@ void loop()
         getQuote();
         getStocks("ET.TO", left);
         getStocks("BTC-CAD", right);
+        GET = false;
       }
     }
     else
