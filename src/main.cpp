@@ -10,7 +10,10 @@
 #include <GxEPD2_BW.h>
 #include <Fonts/Roboto_Regular4pt7b.h>
 #include <Fonts/Roboto_Regular6pt7b.h>
-#include <Fonts/FreeMonoBold9pt7b.h>
+#include <Fonts/Roboto_Regular8pt7b.h>
+#include <Fonts/Roboto_Bold8pt7b.h>
+#include <Fonts/Roboto_Light6pt7b.h>
+#include <Fonts/Roboto_LightItalic6pt7b.h>
 
 // #define MAX_DISPLAY_BUFFER_SIZE 131072ul // e.g. half of available ram
 // #define MAX_HEIGHT(EPD) (EPD::HEIGHT <= MAX_DISPLAY_BUFFER_SIZE / (EPD::WIDTH / 8) ? EPD::HEIGHT : MAX_DISPLAY_BUFFER_SIZE / (EPD::WIDTH / 8))
@@ -22,13 +25,14 @@ GxEPD2_BW<GxEPD2_270, GxEPD2_270::HEIGHT> display(GxEPD2_270(/*CS=5*/ SS, /*DC=*
 WebServer server(80);
 uint8_t g_Power = 1;
 uint8_t apmode = 0;
-bool writeFields = false;
 bool RESET = false;
 bool GET = false;
 int TIMER_COUNTER = 0;
 int GET_PERIOD = 600; // frequency to post, in seconds
 
-String quotesUrl = "https://api.quotable.io/random?tags=technology|success|business|inspirational|education|future|science&maxLength=90";
+const char *quotesUrl = "https://api.quotable.io/random?tags=technology|success|business|inspirational|education|future|science|famout-quotes|life|literature|wisdom&maxLength=45";
+String stockUrl = "https://query1.finance.yahoo.com/v8/finance/chart/";
+String token = "?interval=1d";
 
 // EEPROM addresses for state
 const uint8_t SSID_INDEX = 1;
@@ -102,20 +106,45 @@ void IRAM_ATTR POWER_ISR()
   }
 }
 
-void printWifiStatus(const char *text)
+enum xPosition
 {
-  static int16_t bbx = 264;
-  static int16_t bby = 176;
-  static uint16_t bbw = 0;
-  static uint16_t bbh = 0;
+  center,
+  left,
+  right
+};
+
+void printToDisplay(const char *text, int heightRatio, const GFXfont *font = &Roboto_Regular6pt7b, xPosition xpos = center)
+{
+  int16_t bbx = 264;
+  int16_t bby = 176;
+  uint16_t bbw = 0;
+  uint16_t bbh = 0;
+
+  Serial.println(text);
+
   display.setRotation(1);
-  display.setFont(&Roboto_Regular4pt7b);
+  display.setFont(font);
   display.setTextColor(GxEPD_BLACK);
   int16_t tbx, tby;
   uint16_t tbw, tbh;
+  int16_t tx, ty;
   display.getTextBounds(text, 0, 0, &tbx, &tby, &tbw, &tbh);
-  int16_t tx = max(0, ((display.width() - tbw)));
-  int16_t ty = max(0, (display.height() * 95 / 100 - tbh / 2));
+
+  switch (xpos)
+  {
+  case center:
+    tx = max(0, ((display.width() - tbw) / 2));
+    break;
+  case left:
+    tx = max(0, ((display.width() * 3 / 10 - tbw)));
+    break;
+  case right:
+    tx = max(0, ((display.width() * 8 / 10 - tbw)));
+    break;
+  }
+
+  ty = max(0, (display.height() * heightRatio / 100 - tbh / 2));
+
   bbx = min(bbx, tx);
   bby = min(bby, ty);
   bbw = max(bbw, tbw);
@@ -123,84 +152,62 @@ void printWifiStatus(const char *text)
   // calculate the cursor
   uint16_t x = bbx - tbx;
   uint16_t y = bby - tby;
+
   display.setPartialWindow(bbx, bby, bbw, bbh);
   display.firstPage();
   do
   {
     display.fillScreen(GxEPD_WHITE);
     display.setCursor(x, y);
-    display.print(text);
+    display.println(text);
   } while (display.nextPage());
 }
 
-void printQuoteAuthor(const char *author)
+void getStocks(String ticker, xPosition xpos)
 {
-  static int16_t bbx = 264;
-  static int16_t bby = 176;
-  static uint16_t bbw = 0;
-  static uint16_t bbh = 0;
-  display.setRotation(1);
-  display.setFont(&Roboto_Regular6pt7b);
-  display.setTextColor(GxEPD_BLACK);
-  int16_t tbx, tby;
-  uint16_t tbw, tbh;
-  display.getTextBounds(author, 0, 0, &tbx, &tby, &tbw, &tbh);
-  int16_t tx = max(0, ((display.width() - tbw) / 2));
-  int16_t ty = max(0, (display.height() * 80 / 100 - tbh / 2));
-  bbx = min(bbx, tx);
-  bby = min(bby, ty);
-  bbw = max(bbw, tbw);
-  bbh = max(bbh, tbh);
-  // calculate the cursor
-  uint16_t x = bbx - tbx;
-  uint16_t y = bby - tby;
-  display.setPartialWindow(bbx, bby, bbw, bbh);
-  display.firstPage();
-  do
-  {
-    display.fillScreen(GxEPD_WHITE);
-    display.setCursor(x, y);
-    display.print(author);
-  } while (display.nextPage());
-}
 
-void printQuoteContent(const char *content)
-{
-  Serial.println(content);
-  static int16_t bbx = 264;
-  static int16_t bby = 176;
-  static uint16_t bbw = 0;
-  static uint16_t bbh = 0;
-  display.setRotation(1);
-  display.setFont(&Roboto_Regular6pt7b);
-  display.setTextColor(GxEPD_BLACK);
-  int16_t tbx, tby;
-  uint16_t tbw, tbh;
-  display.getTextBounds(content, 0, 0, &tbx, &tby, &tbw, &tbh);
-  int16_t tx = max(0, ((display.width() - tbw) / 2));
-  int16_t ty = max(0, (display.height() * 60 / 100 - tbh / 2));
-  bbx = min(bbx, tx);
-  bby = min(bby, ty);
-  bbw = max(bbw, tbw);
-  bbh = max(bbh, tbh);
-  // calculate the cursor
-  uint16_t x = bbx - tbx;
-  uint16_t y = bby - tby;
-  display.setPartialWindow(bbx, bby, bbw, bbh);
-  display.firstPage();
-  do
+  HTTPClient http;
+
+  http.begin(stockUrl + ticker + token);
+  int httpResponseCode = http.GET();
+  if (httpResponseCode > 0)
   {
-    display.fillScreen(GxEPD_WHITE);
-    display.setCursor(x, y);
-    display.println(content);
-  } while (display.nextPage());
+    StaticJsonDocument<2048> doc;
+    DeserializationError error = deserializeJson(doc, http.getStream());
+
+    if (error)
+    {
+      Serial.print(F("deserializeJson() failed: "));
+      Serial.println(error.f_str());
+      return;
+    }
+
+    JsonObject chart_result = doc["chart"]["result"][0];
+    const char *symbol = chart_result["meta"]["symbol"];
+    float price = chart_result["meta"]["regularMarketPrice"];
+    float prevClose = chart_result["meta"]["chartPreviousClose"];
+
+    String priceString = String(price);
+    String prevCloseString = String(prevClose);
+
+    printToDisplay(symbol, 40, &Roboto_Bold8pt7b, xpos);
+    printToDisplay(priceString.c_str(), 50, &Roboto_Regular6pt7b, xpos);
+    // printToDisplay(prevCloseString.c_str(), 50);
+  }
+  else
+  {
+    Serial.print("Error code: ");
+    Serial.println(httpResponseCode);
+  }
+  http.end();
+  GET = false;
 }
 
 void getQuote()
 {
 
   HTTPClient http;
-  http.begin(quotesUrl.c_str());
+  http.begin(quotesUrl);
   int httpResponseCode = http.GET();
   if (httpResponseCode > 0)
   {
@@ -214,29 +221,17 @@ void getQuote()
       return;
     }
 
-    std::string contentString = doc["content"];
+    const char *contentString = doc["content"];
     const char *author = doc["author"];
 
-    char contentArray[contentString.size() + 1];
-    strcpy(contentArray, contentString.c_str());
+    // char contentArray[contentString.size() + 1];
 
-    bool previousSpace = false;
-    for (int i = 0; i < sizeof(contentArray); i++)
-    {
-      if (i > 35)
-      {
-        if (contentArray[i] == ' ' && !previousSpace)
-        {
-          contentArray[i] = '\n';
-          previousSpace = true;
-        }
-      }
-    }
-
-    delay(1100);
-    printQuoteAuthor(author);
-    delay(1100);
-    printQuoteContent(contentArray);
+    // for (int i = 0; i < sizeof(contentArray); i++)
+    // {
+    //   contentArray[i] = contentString[i];
+    // }
+    printToDisplay(author, 80, &Roboto_Regular6pt7b);
+    printToDisplay(contentString, 70, &Roboto_LightItalic6pt7b);
   }
   else
   {
@@ -287,20 +282,23 @@ void loop()
     {
       String ip = WiFi.localIP().toString();
       String ipString = "WiFi addr: " + ip;
-      printWifiStatus(ipString.c_str());
+      printToDisplay(ipString.c_str(), 95, &Roboto_Regular4pt7b, left);
+
       if (GET)
       {
         getQuote();
+        getStocks("ET.TO", left);
+        getStocks("BTC-CAD", right);
       }
     }
     else
     {
-      printWifiStatus("No WiFi");
+      printToDisplay("No WiFi", 95, &Roboto_Regular4pt7b, left);
     }
   }
   else
   {
     String statusString = "AP Addr: " + getHostName();
-    printWifiStatus(statusString.c_str());
+    printToDisplay(statusString.c_str(), 95, &Roboto_Regular4pt7b, left);
   }
 };

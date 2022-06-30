@@ -10,20 +10,20 @@ int writeString(uint8_t addr, const char data[])
   return _size + 1;
 }
 
-const char *readString(uint8_t addr)
-{
-  static char data[100]; // Max 100 Bytes
-  int len = 0;
-  unsigned char k = EEPROM.read(addr);
-  while (k != '\0' && len < 500) // Read until null character
-  {
-    k = EEPROM.read(addr + len);
-    data[len] = k;
-    len++;
-  }
-  data[len] = '\0';
-  return data;
-}
+// const char *readString(uint8_t addr)
+// {
+//   static char data[100]; // Max 100 Bytes
+//   int len = 0;
+//   unsigned char k = EEPROM.read(addr);
+//   while (k != '\0' && len < 500) // Read until null character
+//   {
+//     k = EEPROM.read(addr + len);
+//     data[len] = k;
+//     len++;
+//   }
+//   data[len] = '\0';
+//   return data;
+// }
 
 void writeWifiEEPROM(const char ssid[], const char pass[])
 {
@@ -40,15 +40,15 @@ void writeWifiEEPROM(const char ssid[], const char pass[])
   EEPROM.commit();
 }
 
-void writeDeviceNameEEPROM(char name[])
-{
-  if (strlen(name) > 50)
-  {
-    throw std::length_error("Cannot exceed 50 characters");
-  }
-  int index = 202;
-  EEPROM.write(MDNS_INDEX, index);
-  index += writeString(index, name);
-  EEPROM.write(MDNS_SET, 1);
-  EEPROM.commit();
-}
+// void writeDeviceNameEEPROM(char name[])
+// {
+//   if (strlen(name) > 50)
+//   {
+//     throw std::length_error("Cannot exceed 50 characters");
+//   }
+//   int index = 202;
+//   EEPROM.write(MDNS_INDEX, index);
+//   index += writeString(index, name);
+//   EEPROM.write(MDNS_SET, 1);
+//   EEPROM.commit();
+// }
