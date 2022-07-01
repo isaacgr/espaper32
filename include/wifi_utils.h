@@ -1,15 +1,28 @@
-#define HOSTNAME "ESP32-" ///< Hostname. The setup function adds the Chip ID at the end.
-String hostname(HOSTNAME);
-
-String getHostName()
-{
-  return hostname;
-}
+#include "esp_wpa2.h"
+#include "esp_wifi.h"
+#include "esp_wpa2.h"
 
 // AP mode password
-const char WiFiAPPSK[] = "ledwifi32";
-const char *id = ssid;
-const char *pass = password;
+char WiFiAPPSK[] = "ledwifi32";
+
+// SSID to connect to
+char ssid[] = "VIRGIN559";
+char identity[] = "";
+char username[] = "";
+char password[] = "412C7934";
+char mdns_name[] = "isaac-epaper";
+
+char *toCharArray(String str)
+{
+  char charArray[str.length() + 1];
+
+  for (int i = 0; i < str.length(); i++)
+  {
+    charArray[i] = str[i];
+  }
+
+  return charArray;
+}
 
 void WiFiStationConnected(WiFiEvent_t event, WiFiEventInfo_t info)
 {
@@ -29,10 +42,10 @@ void WiFiStationDisconnected(WiFiEvent_t event, WiFiEventInfo_t info)
   Serial.print("WiFi lost connection. Reason: ");
   Serial.println(info.disconnected.reason);
   Serial.println("Trying to Reconnect");
-  WiFi.begin(id, pass);
+  WiFi.begin(ssid, password);
 }
 
-void setupWifi()
+void setupWifi(String hostname, int enterpriseModePin)
 {
   // Set Hostname.
   uint64_t chipid = ESP.getEfuseMac();
@@ -58,22 +71,45 @@ void setupWifi()
   }
   else
   {
-    if (EEPROM.read(WIFI_SET) == 1)
-    {
-      int idIndex = EEPROM.read(SSID_INDEX);
-      id = EEPROM.readString(idIndex).c_str();
-      int passwordIndex = EEPROM.read(PASS_INDEX);
-      pass = EEPROM.readString(passwordIndex).c_str();
-    }
-    WiFi.mode(WIFI_STA);
-    WiFi.disconnect(true);
-
-    delay(1000);
-
     WiFi.onEvent(WiFiStationConnected, SYSTEM_EVENT_STA_CONNECTED);
     WiFi.onEvent(WiFiGotIP, SYSTEM_EVENT_STA_GOT_IP);
     WiFi.onEvent(WiFiStationDisconnected, SYSTEM_EVENT_STA_DISCONNECTED);
-    WiFi.begin(id, pass);
+    WiFi.mode(WIFI_STA);
+    WiFi.disconnect(true);
     Serial.println("Wait for WiFi... ");
+
+    if (EEPROM.read(WIFI_SET) == 1)
+    {
+      int idIndex = EEPROM.read(SSID_INDEX);
+      char *ssid = toCharArray(EEPROM.readString(idIndex));
+      int passwordIndex = EEPROM.read(PASSWORD_INDEX);
+      char *password = toCharArray(EEPROM.readString(passwordIndex));
+      int usernameIndex = EEPROM.read(USERNAME_INDEX);
+      char *username = toCharArray(EEPROM.readString(usernameIndex));
+      int identityIndex = EEPROM.read(IDENTITY_INDEX);
+      char *identity = toCharArray(EEPROM.readString(identityIndex));
+
+      if (digitalRead(enterpriseModePin))
+      {
+        Serial.println("Enterprise wifi mode");
+        esp_wpa2_config_t config = WPA2_CONFIG_INIT_DEFAULT();
+        // This part of the code is taken from the oficial wpa2_enterprise example from esp-idf
+        ESP_LOGI(TAG, "Setting WiFi configuration SSID %s...", wifi_config.sta.ssid);
+        ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+        ESP_ERROR_CHECK(esp_wifi_sta_wpa2_ent_set_identity((uint8_t *)identity, strlen(identity)));
+        ESP_ERROR_CHECK(esp_wifi_sta_wpa2_ent_set_username((uint8_t *)username, strlen(username)));
+        ESP_ERROR_CHECK(esp_wifi_sta_wpa2_ent_set_password((uint8_t *)password, strlen(password)));
+        ESP_ERROR_CHECK(esp_wifi_sta_wpa2_ent_enable(&config));
+        WiFi.begin(ssid);
+      }
+      else
+      {
+        WiFi.begin(ssid, password);
+      }
+    }
+    else
+    {
+      WiFi.begin(ssid, password);
+    }
   }
 }

@@ -1,3 +1,5 @@
+#include <EEPROM.h>
+
 int writeString(uint8_t addr, const char data[])
 {
   int _size = strlen(data);
@@ -10,32 +12,21 @@ int writeString(uint8_t addr, const char data[])
   return _size + 1;
 }
 
-// const char *readString(uint8_t addr)
-// {
-//   static char data[100]; // Max 100 Bytes
-//   int len = 0;
-//   unsigned char k = EEPROM.read(addr);
-//   while (k != '\0' && len < 500) // Read until null character
-//   {
-//     k = EEPROM.read(addr + len);
-//     data[len] = k;
-//     len++;
-//   }
-//   data[len] = '\0';
-//   return data;
-// }
-
-void writeWifiEEPROM(const char ssid[], const char pass[])
+void writeWifiEEPROM(char ssid[], char identity[], char username[], char password[])
 {
   int index = 100;
-  if (strlen(ssid) > 50 || strlen(pass) > 50)
+  if (strlen(ssid) > 50 || strlen(password) > 50 || strlen(username) > 50 || strlen(identity) > 50)
   {
     throw std::length_error("Cannot exceed 50 characters");
   }
   EEPROM.write(SSID_INDEX, index);
   index += writeString(index, ssid);
-  EEPROM.write(PASS_INDEX, index);
-  index += writeString(index, pass);
+  EEPROM.write(PASSWORD_INDEX, index);
+  index += writeString(index, password);
+  EEPROM.write(USERNAME_INDEX, index);
+  index += writeString(index, username);
+  EEPROM.write(IDENTITY_INDEX, index);
+  index += writeString(index, identity);
   EEPROM.write(WIFI_SET, 1);
   EEPROM.commit();
 }

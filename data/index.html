@@ -29,6 +29,10 @@
         <form>
           <label class="sub-title" for="ssid">SSID</label>
           <input id="ssid" type="text" maxlength="50" />
+          <label class="sub-title" for="identity">Identity</label>
+          <input id="identity" type="text" maxlength="50" />
+          <label class="sub-title" for="username">Username</label>
+          <input id="username" type="text" maxlength="50" />
           <label class="sub-title" for="password">Password</label>
           <input id="password" type="password" maxlength="50" />
           <div class="content-block content-block--flex">
@@ -50,6 +54,8 @@
           .then((data) => {
             document.getElementById("ssid").value = data.ssid;
             document.getElementById("password").value = data.password;
+            document.getElementById("username").value = data.username;
+            document.getElementById("identity").value = data.identity;
           })
           .catch((error) => {
             setError(error);
@@ -62,10 +68,15 @@
           event.preventDefault();
           var ssid = document.getElementById("ssid").value;
           var pass = document.getElementById("password").value;
+          var username = document.getElementById("username").value;
+          var identity = document.getElementById("identity").value;
           document.getElementById("wifi-button").disabled = true;
-          fetch(`${window.location.origin}/wifi?ssid=${ssid}&pass=${pass}`, {
-            method: "POST"
-          })
+          fetch(
+            `${window.location.origin}/wifi?ssid=${ssid}&pass=${pass}&username=${username}&identity=${identity}`,
+            {
+              method: "POST"
+            }
+          )
             .then((response) => {
               if (response.status === 200) {
                 document.getElementById("wifi-button").disabled = false;

@@ -1,11 +1,15 @@
 #include <Arduino.h>
-#include <WiFi.h>
 #include <WebServer.h>
 #include <EEPROM.h>
 #include <ArduinoJson.h>
 #include <FS.h>
 #include <SPIFFS.h>
 #include <HTTPClient.h>
+#include <WiFi.h>
+// #include <HTTPSServer.hpp>
+// #include <SSLCert.hpp>
+// #include <HTTPRequest.hpp>
+// #include <HTTPResponse.hpp>
 
 #include <GxEPD2_BW.h>
 #include <Fonts/Roboto_Regular4pt7b.h>
@@ -19,12 +23,21 @@
 // #define MAX_HEIGHT(EPD) (EPD::HEIGHT <= MAX_DISPLAY_BUFFER_SIZE / (EPD::WIDTH / 8) ? EPD::HEIGHT : MAX_DISPLAY_BUFFER_SIZE / (EPD::WIDTH / 8))
 
 #define POWER_BUTTON 21
+#define ENTERPRISE_MODE 15
 
 GxEPD2_BW<GxEPD2_270, GxEPD2_270::HEIGHT> display(GxEPD2_270(/*CS=5*/ SS, /*DC=*/17, /*RST=*/16, /*BUSY=*/4)); // GDEW027W3
 
+// using namespace httpsserver;
+// SSLCert *cert;
+
+// HTTPSServer *server;
+// cert = new SSLCert();
+
 WebServer server(80);
+
 uint8_t g_Power = 1;
 uint8_t apmode = 0;
+String hostname = "ESP-";
 bool RESET = false;
 bool GET = false;
 int TIMER_COUNTER = 0;
@@ -37,17 +50,25 @@ String token = "?interval=1d";
 
 // EEPROM addresses for state
 const uint8_t SSID_INDEX = 1;
-const uint8_t PASS_INDEX = 2;
+const uint8_t PASSWORD_INDEX = 2;
 const uint8_t WIFI_SET = 3;
 const uint8_t MDNS_INDEX = 4;
 const uint8_t MDNS_SET = 5;
 const uint8_t AP_SET = 6;
+const uint8_t USERNAME_INDEX = 7;
+const uint8_t IDENTITY_INDEX = 8;
 
-#include <secret.h>
-#include <eeprom_utils.h>
+// Position options for text on display
+enum xPosition
+{
+  center,
+  left,
+  right
+};
+
 #include <wifi_utils.h>
+#include <eeprom_utils.h>
 #include <file_manager.h>
-#include <server_routes.h>
 
 void IRAM_ATTR timer1_ISR(void)
 {
@@ -107,12 +128,63 @@ void IRAM_ATTR POWER_ISR()
   }
 }
 
-enum xPosition
+void setupWeb()
 {
-  center,
-  left,
-  right
-};
+  server.on(
+      "/wifi", HTTP_POST, []()
+      {
+    String ssid = server.arg("ssid");
+    String password = server.arg("password");
+    String username = server.arg("username");
+    String identity = server.arg("identity");
+    try
+    {
+      writeWifiEEPROM(toCharArray(ssid), toCharArray(identity), toCharArray(username), toCharArray(password));
+      server.send(200, "text/plain", "OK");
+    }
+    catch (const std::length_error &e)
+    {
+      StaticJsonDocument<32> root;
+      root["error"] = e.what();
+      String error;
+      serializeJsonPretty(root, error);
+      server.send(400, "application/json", error);
+    } });
+
+  server.on(
+      "/wifi", HTTP_GET, []()
+      {
+      int ssidIndex = EEPROM.read(SSID_INDEX);
+      int passwordIndex = EEPROM.read(PASSWORD_INDEX);
+      int usernameIndex = EEPROM.read(USERNAME_INDEX);
+      int identityIndex = EEPROM.read(IDENTITY_INDEX);
+    try
+    {
+      StaticJsonDocument<256> root;
+      root["password"] = EEPROM.readString(passwordIndex);
+      root["ssid"] = EEPROM.readString(ssidIndex);
+      root["username"] = EEPROM.readString(usernameIndex);
+      root["identity"] = EEPROM.readString(identityIndex);
+      String result;
+      serializeJsonPretty(root, result);
+      server.send(200, "application/json", result);
+    }
+    catch (const std::exception &e)
+    {
+      StaticJsonDocument<32> root;
+      root["error"] = e.what();
+      String error;
+      serializeJsonPretty(root, error);
+      server.send(400, "application/json", error);
+    } });
+
+  server.onNotFound([]()
+                    {
+    if (!handleFileRead(server.uri()))
+    {
+      server.send(404, "text/plain", "Not Found");
+    } });
+}
 
 void printToDisplay(const char *text, int heightRatio, const GFXfont *font = &Roboto_Regular6pt7b, xPosition xpos = center)
 {
@@ -120,8 +192,6 @@ void printToDisplay(const char *text, int heightRatio, const GFXfont *font = &Ro
   int16_t bby = 176;
   uint16_t bbw = 0;
   uint16_t bbh = 0;
-
-  Serial.println(text);
 
   display.setRotation(1);
   display.setFont(font);
@@ -154,6 +224,7 @@ void printToDisplay(const char *text, int heightRatio, const GFXfont *font = &Ro
   uint16_t x = bbx - tbx;
   uint16_t y = bby - tby;
 
+  // display.setFullWindow();
   display.setPartialWindow(bbx, bby, bbw, bbh);
   display.firstPage();
   do
@@ -253,14 +324,27 @@ void setup()
   while (!Serial)
   {
   }
+  // int createCertResult = createSelfSignedCert(
+  //     *cert,
+  //     KEYSIZE_2048,
+  //     "CN=myesp.local,O=acme,C=US");
+
+  // if (createCertResult != 0)
+  // {
+  //   Serial.printf("Error generating certificate");
+  //   return;
+  // }
+  // server = new HTTPSServer(cert);
+
   GET = true;
   apmode = EEPROM.read(AP_SET);
-  setupWifi();
-  // SPIFFS.format(); // Prevents SPIFFS_ERR_NOT_A_FS
-  SPIFFS.begin(); // Start the SPI Flash Files System
-  server.begin();
-  server.enableCORS();
+  setupWifi(hostname, ENTERPRISE_MODE);
   setupWeb();
+  // SPIFFS.format(); // Prevents SPIFFS_ERR_NOT_A_FS
+  SPIFFS.begin();
+  server.begin();
+  // server.enableCORS();
+
   display.init(115200);
 
   // Setup interrupts
@@ -305,7 +389,7 @@ void loop()
   }
   else
   {
-    String statusString = "AP Addr: " + getHostName();
+    String statusString = "Hostname: " + hostname + "    IP: 192.168.4.1";
     printToDisplay(statusString.c_str(), 95, &Roboto_Regular4pt7b, left);
   }
 };
