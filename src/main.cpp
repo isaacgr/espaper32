@@ -3,6 +3,7 @@
 #include <ArduinoJson.h>
 #include <FS.h>
 #include <SPIFFS.h>
+#include <WiFi.h>
 #include <HTTPClient.h>
 #include <HTTPSServer.hpp>
 #include <SSLCert.hpp>
@@ -44,7 +45,7 @@ void handleGetWifi(HTTPRequest *req, HTTPResponse *res);
 void handlePostWifi(HTTPRequest *req, HTTPResponse *res);
 
 HTTPSServer *server;
-SSLCert *cert;
+SSLCert *getCertificate();
 
 uint8_t g_Power = 1;
 uint8_t apmode = 0;
@@ -138,6 +139,75 @@ void IRAM_ATTR POWER_ISR()
   }
 }
 
+bool certFileExists()
+{
+  // Try to open key and cert file to see if they exist
+  bool result = false;
+  File keyFile = SPIFFS.open("/certs/key.der");
+  File certFile = SPIFFS.open("/certs/cert.der");
+
+  if (!keyFile || !certFile || keyFile.size() == 0 || certFile.size() == 0)
+  {
+    result = false;
+  }
+  else
+  {
+    if (keyFile)
+      keyFile.close();
+    if (certFile)
+      certFile.close();
+    result = true;
+  }
+  return result;
+}
+
+/**
+ * This function will either read the certificate and private key from SPIFFS or
+ * create a self-signed certificate and write it to SPIFFS for next boot
+ */
+SSLCert *getCertificate()
+{
+  SSLCert *cert;
+
+  // Try to open key and cert file to see if they exist, if not, make them
+  if (certFileExists())
+  {
+    Serial.println(F("Certificate FOUND in SPIFFS"));
+    Serial.println(F("Reading certificate from SPIFFS."));
+    File keyFile = SPIFFS.open("/certs/key.der");
+    File certFile = SPIFFS.open("/certs/cert.der");
+
+    // The files exist, so we can create a certificate based on them
+    size_t keySize = keyFile.size();
+    size_t certSize = certFile.size();
+
+    uint8_t *keyBuffer = new uint8_t[keySize];
+    if (keyBuffer == NULL)
+    {
+      Serial.println(F("Not enough memory to load private key"));
+    }
+    uint8_t *certBuffer = new uint8_t[certSize];
+    if (certBuffer == NULL)
+    {
+      delete[] keyBuffer;
+      Serial.println(F("Not enough memory to load certificate"));
+    }
+    keyFile.read(keyBuffer, keySize);
+    certFile.read(certBuffer, certSize);
+
+    // Close the files
+    keyFile.close();
+    certFile.close();
+    Serial.printf("Read %u bytes of certificate and %u bytes of key from SPIFFS\n", certSize, keySize);
+    cert = new SSLCert(certBuffer, certSize, keyBuffer, keySize);
+  }
+  else
+  {
+    Serial.println(F("No prexisting certificate found in SPIFFS"));
+  }
+  return cert;
+}
+
 /**
  * This handler function will try to load the requested resource from SPIFFS's /public folder.
  *
@@ -153,7 +223,8 @@ void handleSPIFFS(HTTPRequest *req, HTTPResponse *res)
     std::string reqFile = req->getRequestString() == "/" ? "/index.html" : req->getRequestString();
 
     // Try to open the file
-    std::string filename = std::string("/") + reqFile;
+    // std::string filename = std::string("/") + reqFile;
+    std::string filename = reqFile;
 
     // Check if the file exists
     if (!SPIFFS.exists(filename.c_str()))
@@ -439,20 +510,13 @@ void setup()
   Serial.println("SPIFFS has been mounted.");
   SPIFFS.begin();
   // Now that SPIFFS is ready, we can create or load the certificate
-  cert = new SSLCert();
-
-  int createCertResult = createSelfSignedCert(
-      *cert,
-      KEYSIZE_2048,
-      "CN=myesp.local,O=acme,C=US");
-
-  if (createCertResult != 0)
+  SSLCert *cert = getCertificate();
+  if (cert == NULL)
   {
-    Serial.printf("Error generating certificate");
-    return;
+    Serial.println("Could not load certificate. Stop.");
+    while (true)
+      ;
   }
-
-  Serial.println("Certificate created with success");
 
   server = new HTTPSServer(cert);
 
@@ -473,6 +537,10 @@ void setup()
 
   Serial.println("Starting server...");
   server->start();
+  if (server->isRunning())
+  {
+    Serial.println("Server ready.");
+  }
 
   display.init(115200);
 
