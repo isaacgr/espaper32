@@ -1,15 +1,15 @@
 #include <Arduino.h>
-#include <WebServer.h>
 #include <EEPROM.h>
 #include <ArduinoJson.h>
 #include <FS.h>
 #include <SPIFFS.h>
 #include <HTTPClient.h>
-#include <WiFi.h>
-// #include <HTTPSServer.hpp>
-// #include <SSLCert.hpp>
-// #include <HTTPRequest.hpp>
-// #include <HTTPResponse.hpp>
+#include <HTTPSServer.hpp>
+#include <SSLCert.hpp>
+#include <HTTPRequest.hpp>
+#include <HTTPResponse.hpp>
+#include <util.hpp>
+#include <string>
 
 #include <GxEPD2_BW.h>
 #include <Fonts/Roboto_Regular4pt7b.h>
@@ -25,15 +25,26 @@
 #define POWER_BUTTON 21
 #define ENTERPRISE_MODE 15
 
+// We need to specify some content-type mapping, so the resources get delivered with the
+// right content type and are displayed correctly in the browser
+char contentTypes[][2][32] = {
+    {".html", "text/html"},
+    {".css", "text/css"},
+    {".js", "application/javascript"},
+    {".json", "application/json"},
+    {".png", "image/png"},
+    {".jpg", "image/jpg"},
+    {"", ""}};
+
 GxEPD2_BW<GxEPD2_270, GxEPD2_270::HEIGHT> display(GxEPD2_270(/*CS=5*/ SS, /*DC=*/17, /*RST=*/16, /*BUSY=*/4)); // GDEW027W3
 
-// using namespace httpsserver;
-// SSLCert *cert;
+using namespace httpsserver;
+void handleSPIFFS(HTTPRequest *req, HTTPResponse *res);
+void handleGetWifi(HTTPRequest *req, HTTPResponse *res);
+void handlePostWifi(HTTPRequest *req, HTTPResponse *res);
 
-// HTTPSServer *server;
-// cert = new SSLCert();
-
-WebServer server(80);
+HTTPSServer *server;
+SSLCert *cert;
 
 uint8_t g_Power = 1;
 uint8_t apmode = 0;
@@ -44,7 +55,7 @@ int TIMER_COUNTER = 0;
 int GET_PERIOD = 600; // frequency to post, in seconds
 hw_timer_t *timer = NULL;
 
-const char *quotesUrl = "https://api.quotable.io/random?tags=technology|success|business|inspirational|education|future|science|famout-quotes|life|literature|wisdom&maxLength=45";
+const char *quotesUrl = "https://api.quotable.io/random?tags=technology|success|business|inspirational|education|future|science|famous-quotes|life|literature|wisdom&maxLength=45";
 String stockUrl = "https://query1.finance.yahoo.com/v8/finance/chart/";
 String token = "?interval=1d";
 
@@ -68,7 +79,6 @@ enum xPosition
 
 #include <wifi_utils.h>
 #include <eeprom_utils.h>
-#include <file_manager.h>
 
 void IRAM_ATTR timer1_ISR(void)
 {
@@ -128,62 +138,140 @@ void IRAM_ATTR POWER_ISR()
   }
 }
 
-void setupWeb()
+/**
+ * This handler function will try to load the requested resource from SPIFFS's /public folder.
+ *
+ * If the method is not GET, it will throw 405, if the file is not found, it will throw 404.
+ */
+void handleSPIFFS(HTTPRequest *req, HTTPResponse *res)
 {
-  server.on(
-      "/wifi", HTTP_POST, []()
-      {
-    String ssid = server.arg("ssid");
-    String password = server.arg("password");
-    String username = server.arg("username");
-    String identity = server.arg("identity");
-    try
-    {
-      writeWifiEEPROM(toCharArray(ssid), toCharArray(identity), toCharArray(username), toCharArray(password));
-      server.send(200, "text/plain", "OK");
-    }
-    catch (const std::length_error &e)
-    {
-      StaticJsonDocument<32> root;
-      root["error"] = e.what();
-      String error;
-      serializeJsonPretty(root, error);
-      server.send(400, "application/json", error);
-    } });
 
-  server.on(
-      "/wifi", HTTP_GET, []()
-      {
-      int ssidIndex = EEPROM.read(SSID_INDEX);
-      int passwordIndex = EEPROM.read(PASSWORD_INDEX);
-      int usernameIndex = EEPROM.read(USERNAME_INDEX);
-      int identityIndex = EEPROM.read(IDENTITY_INDEX);
-    try
-    {
-      StaticJsonDocument<256> root;
-      root["password"] = EEPROM.readString(passwordIndex);
-      root["ssid"] = EEPROM.readString(ssidIndex);
-      root["username"] = EEPROM.readString(usernameIndex);
-      root["identity"] = EEPROM.readString(identityIndex);
-      String result;
-      serializeJsonPretty(root, result);
-      server.send(200, "application/json", result);
-    }
-    catch (const std::exception &e)
-    {
-      StaticJsonDocument<32> root;
-      root["error"] = e.what();
-      String error;
-      serializeJsonPretty(root, error);
-      server.send(400, "application/json", error);
-    } });
+  // We only handle GET here
+  if (req->getMethod() == "GET")
+  {
+    // Redirect / to /index.html
+    std::string reqFile = req->getRequestString() == "/" ? "/index.html" : req->getRequestString();
 
-  server.onNotFound([]()
-                    {
-    if (!handleFileRead(server.uri()))
+    // Try to open the file
+    std::string filename = std::string("/") + reqFile;
+
+    // Check if the file exists
+    if (!SPIFFS.exists(filename.c_str()))
     {
-      server.send(404, "text/plain", "Not Found");
-    } });
+      // Send "404 Not Found" as response, as the file doesn't seem to exist
+      res->setStatusCode(404);
+      res->setStatusText("Not found");
+      res->println("404 Not Found");
+      return;
+    }
+
+    File file = SPIFFS.open(filename.c_str());
+
+    // Set length
+    res->setHeader("Content-Length", httpsserver::intToString(file.size()));
+
+    // Content-Type is guessed using the definition of the contentTypes-table defined above
+    int cTypeIdx = 0;
+    do
+    {
+      if (reqFile.rfind(contentTypes[cTypeIdx][0]) != std::string::npos)
+      {
+        res->setHeader("Content-Type", contentTypes[cTypeIdx][1]);
+        break;
+      }
+      cTypeIdx += 1;
+    } while (strlen(contentTypes[cTypeIdx][0]) > 0);
+
+    // Read the file and write it to the response
+    uint8_t buffer[256];
+    size_t length = 0;
+    do
+    {
+      length = file.read(buffer, 256);
+      res->write(buffer, length);
+    } while (length > 0);
+
+    file.close();
+  }
+  else
+  {
+    // If there's any body, discard it
+    req->discardRequestBody();
+    // Send "405 Method not allowed" as response
+    res->setStatusCode(405);
+    res->setStatusText("Method not allowed");
+    res->println("405 Method not allowed");
+  }
+}
+
+/**
+ * This function will return the wifi credentials as JSON object:
+ * {"username": "foo", "password": "bar", "ssid": "hello", "identity": "world"}
+ */
+void handleGetWifi(HTTPRequest *req, HTTPResponse *res)
+{
+  // Set the content type of the response
+  res->setHeader("Content-Type", "application/json");
+  int ssidIndex = EEPROM.read(SSID_INDEX);
+  int passwordIndex = EEPROM.read(PASSWORD_INDEX);
+  int usernameIndex = EEPROM.read(USERNAME_INDEX);
+  int identityIndex = EEPROM.read(IDENTITY_INDEX);
+  try
+  {
+    StaticJsonDocument<256> root;
+    root["password"] = EEPROM.readString(passwordIndex);
+    root["ssid"] = EEPROM.readString(ssidIndex);
+    root["username"] = EEPROM.readString(usernameIndex);
+    root["identity"] = EEPROM.readString(identityIndex);
+    String result;
+    serializeJsonPretty(root, *res);
+  }
+  catch (const std::exception &e)
+  {
+    res->setStatusCode(400);
+    StaticJsonDocument<32> root;
+    root["error"] = e.what();
+    String error;
+    serializeJsonPretty(root, *res);
+  }
+}
+
+char *c_strToCharArray(std::string str)
+{
+  char charArray[str.length() + 1];
+
+  for (int i = 0; i < str.length(); i++)
+  {
+    charArray[i] = str[i];
+  }
+
+  return charArray;
+}
+
+void handlePostWifi(HTTPRequest *req, HTTPResponse *res)
+{
+  // Set the content type of the response
+  res->setHeader("Content-Type", "application/json");
+  ResourceParameters *params = req->getParams();
+  std::string ssid, password, username, identity;
+
+  params->getQueryParameter("ssid", ssid);
+  params->getQueryParameter("password", password);
+  params->getQueryParameter("username", username);
+  params->getQueryParameter("identity", identity);
+  try
+  {
+    writeWifiEEPROM(c_strToCharArray(ssid), c_strToCharArray(identity), c_strToCharArray(username), c_strToCharArray(password));
+    res->print("OK");
+  }
+  catch (const std::length_error &e)
+  {
+    res->setStatusCode(400);
+    StaticJsonDocument<32> root;
+    root["error"] = e.what();
+    String error;
+    serializeJsonPretty(root, *res);
+  }
 }
 
 void printToDisplay(const char *text, int heightRatio, const GFXfont *font = &Roboto_Regular6pt7b, xPosition xpos = center)
@@ -321,29 +409,70 @@ void setup()
     return;
   }
   Serial.begin(115200);
-  while (!Serial)
+  // Try to mount SPIFFS without formatting on failure
+  if (!SPIFFS.begin(false))
   {
-  }
-  // int createCertResult = createSelfSignedCert(
-  //     *cert,
-  //     KEYSIZE_2048,
-  //     "CN=myesp.local,O=acme,C=US");
+    // If SPIFFS does not work, we wait for serial connection...
+    while (!Serial)
+      ;
+    delay(1000);
 
-  // if (createCertResult != 0)
-  // {
-  //   Serial.printf("Error generating certificate");
-  //   return;
-  // }
-  // server = new HTTPSServer(cert);
+    // Ask to format SPIFFS using serial interface
+    Serial.print("Mounting SPIFFS failed. Try formatting? (y/n): ");
+    while (!Serial.available())
+      ;
+    Serial.println();
+
+    // If the user did not accept to try formatting SPIFFS or formatting failed:
+    if (Serial.read() != 'y' || !SPIFFS.begin(true))
+    {
+      Serial.println("SPIFFS not available. Stop.");
+      while (true)
+        ;
+    }
+    else
+    {
+      SPIFFS.format();
+    }
+    Serial.println("SPIFFS has been formated.");
+  }
+  Serial.println("SPIFFS has been mounted.");
+  SPIFFS.begin();
+  // Now that SPIFFS is ready, we can create or load the certificate
+  cert = new SSLCert();
+
+  int createCertResult = createSelfSignedCert(
+      *cert,
+      KEYSIZE_2048,
+      "CN=myesp.local,O=acme,C=US");
+
+  if (createCertResult != 0)
+  {
+    Serial.printf("Error generating certificate");
+    return;
+  }
+
+  Serial.println("Certificate created with success");
+
+  server = new HTTPSServer(cert);
+
+  // We register the SPIFFS handler as the default node, so every request that does
+  // not hit any other node will be redirected to the file system.
+  ResourceNode *spiffsNode = new ResourceNode("", "", &handleSPIFFS);
+  server->setDefaultNode(spiffsNode);
+
+  // Add a handler that serves the current system uptime at GET /api/uptime
+  ResourceNode *getWifiNode = new ResourceNode("/api/wifi", "GET", &handleGetWifi);
+  server->registerNode(getWifiNode);
+  ResourceNode *postWifiNode = new ResourceNode("/api/wifi", "POST", &handlePostWifi);
+  server->registerNode(postWifiNode);
 
   GET = true;
   apmode = EEPROM.read(AP_SET);
   setupWifi(hostname, ENTERPRISE_MODE);
-  setupWeb();
-  // SPIFFS.format(); // Prevents SPIFFS_ERR_NOT_A_FS
-  SPIFFS.begin();
-  server.begin();
-  // server.enableCORS();
+
+  Serial.println("Starting server...");
+  server->start();
 
   display.init(115200);
 
@@ -359,13 +488,15 @@ void setup()
 
 void loop()
 {
+  server->loop();
+
   if (RESET)
   {
     RESET = !RESET;
     EEPROM.commit();
     ESP.restart();
   }
-  server.handleClient();
+
   if (apmode == 0)
   {
     if (WiFi.status() == WL_CONNECTED)
