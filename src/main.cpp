@@ -6,10 +6,6 @@
 #include <SPIFFS.h>
 #include <HTTPClient.h>
 #include <WiFi.h>
-// #include <HTTPSServer.hpp>
-// #include <SSLCert.hpp>
-// #include <HTTPRequest.hpp>
-// #include <HTTPResponse.hpp>
 
 #include <GxEPD2_BW.h>
 #include <Fonts/Roboto_Regular4pt7b.h>
@@ -27,14 +23,7 @@
 
 GxEPD2_BW<GxEPD2_270, GxEPD2_270::HEIGHT> display(GxEPD2_270(/*CS=5*/ SS, /*DC=*/17, /*RST=*/16, /*BUSY=*/4)); // GDEW027W3
 
-// using namespace httpsserver;
-// SSLCert *cert;
-
-// HTTPSServer *server;
-// cert = new SSLCert();
-
 WebServer server(80);
-
 uint8_t g_Power = 1;
 uint8_t apmode = 0;
 String hostname = "ESP-";
@@ -321,27 +310,39 @@ void setup()
     return;
   }
   Serial.begin(115200);
-  while (!Serial)
+  if (!SPIFFS.begin(false))
   {
-  }
-  // int createCertResult = createSelfSignedCert(
-  //     *cert,
-  //     KEYSIZE_2048,
-  //     "CN=myesp.local,O=acme,C=US");
+    // If SPIFFS does not work, we wait for serial connection...
+    while (!Serial)
+      ;
+    delay(1000);
 
-  // if (createCertResult != 0)
-  // {
-  //   Serial.printf("Error generating certificate");
-  //   return;
-  // }
-  // server = new HTTPSServer(cert);
+    // Ask to format SPIFFS using serial interface
+    Serial.print("Mounting SPIFFS failed. Try formatting? (y/n): ");
+    while (!Serial.available())
+      ;
+    Serial.println();
+
+    // If the user did not accept to try formatting SPIFFS or formatting failed:
+    if (Serial.read() != 'y' || !SPIFFS.begin(true))
+    {
+      Serial.println("SPIFFS not available. Stop.");
+      while (true)
+        ;
+    }
+    else
+    {
+      SPIFFS.format();
+    }
+    Serial.println("SPIFFS has been formated.");
+  }
+  Serial.println("SPIFFS has been mounted.");
+  SPIFFS.begin();
 
   GET = true;
   apmode = EEPROM.read(AP_SET);
   setupWifi(hostname, ENTERPRISE_MODE);
   setupWeb();
-  // SPIFFS.format(); // Prevents SPIFFS_ERR_NOT_A_FS
-  SPIFFS.begin();
   server.begin();
   // server.enableCORS();
 
