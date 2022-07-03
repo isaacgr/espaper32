@@ -56,6 +56,12 @@ int TIMER_COUNTER = 0;
 int GET_PERIOD = 600; // frequency to post, in seconds
 hw_timer_t *timer = NULL;
 
+enum xPosition
+{
+  left,
+  right
+};
+
 const char *quotesUrl = "https://api.quotable.io/random?tags=technology|success|business|inspirational|education|future|science|famous-quotes|life|literature|wisdom&maxLength=45";
 String stockUrl = "https://query1.finance.yahoo.com/v8/finance/chart/";
 String token = "?interval=1d";
@@ -339,10 +345,10 @@ void handlePostWifi(HTTPRequest *req, HTTPResponse *res)
 
 void printToDisplay(const char *text, uint16_t windowX, uint16_t windowY, uint16_t windowW, uint16_t windowH, bool inverted = false, const GFXfont *font = &Roboto_Light6pt7b)
 {
-  bool test = true;
+  bool test = false;
   display.setRotation(1);
   display.setFont(font);
-  display.setTextColor(GxEPD_WHITE);
+  display.setTextColor(GxEPD_BLACK);
   int16_t tbx, tby;
   uint16_t tbw, tbh;
   display.getTextBounds(text, 0, 0, &tbx, &tby, &tbw, &tbh);
@@ -351,12 +357,12 @@ void printToDisplay(const char *text, uint16_t windowX, uint16_t windowY, uint16
   uint16_t wy;
   if (inverted)
   {
-    y = display.height() - ((windowH - tbh - tby) / 2) - windowY;
+    y = display.height() - ((windowH - tbh - (tby / 2)) / 2) - windowY;
     wy = display.height() - windowH - windowY;
   }
   else
   {
-    y = (windowH + tbh) / 2;
+    y = (windowH + tbh + (tby / 2)) / 2;
     wy = windowY;
   }
   display.setPartialWindow(windowX, wy, windowW, windowH);
@@ -364,16 +370,16 @@ void printToDisplay(const char *text, uint16_t windowX, uint16_t windowY, uint16
   do
   {
     display.fillScreen(GxEPD_WHITE);
-    display.setCursor(x, y);
     if (test)
     {
       display.fillRect(windowX, wy, windowW, windowH, GxEPD_BLACK);
     }
+    display.setCursor(x, y);
     display.println(text);
   } while (display.nextPage());
 }
 
-void getStocks(String ticker)
+void getStocks(String ticker, xPosition xPos)
 {
 
   HTTPClient http;
@@ -400,8 +406,17 @@ void getStocks(String ticker)
     String priceString = String(price);
     String prevCloseString = String(prevClose);
 
-    // printToDisplay(symbol, 40, &Roboto_Bold8pt7b, xpos);
-    // printToDisplay(priceString.c_str(), 50, &Roboto_Regular6pt7b, xpos);
+    if (xPos == left)
+    {
+      printToDisplay(symbol, 0, display.height() * 60 / 100, display.width() / 2, 30, true, &Roboto_Bold8pt7b);
+      printToDisplay(priceString.c_str(), 0, display.height() * 48 / 100, display.width() / 2, 20, true);
+    }
+    else if (xPos == right)
+    {
+      printToDisplay(symbol, display.width() / 2, display.height() * 60 / 100, display.width() / 2, 30, true, &Roboto_Bold8pt7b);
+      printToDisplay(priceString.c_str(), display.width() / 2, display.height() * 48 / 100, display.width() / 2, 20, true);
+    }
+
     // printToDisplay(prevCloseString.c_str(), 50);
   }
   else
@@ -433,8 +448,8 @@ void getQuote()
     const char *contentString = doc["content"];
     const char *author = doc["author"];
 
-    // printToDisplay(author, 82, &Roboto_Regular6pt7b);
-    // printToDisplay(contentString, 70, &Roboto_LightItalic6pt7b);
+    printToDisplay(contentString, 0, display.height() * 25 / 100, display.width(), 25, true, &Roboto_LightItalic6pt7b);
+    printToDisplay(author, 0, display.height() * 14 / 100, display.width(), 15, true);
   }
   else
   {
@@ -541,33 +556,38 @@ void loop()
   if (apmode == 0)
   {
 
-    printToDisplay("jira tickets", 0, 0, display.width(), 25, false, &Roboto_Regular8pt7b);
-    printToDisplay("wifi status", 0, 0, display.width() / 2, 20, true);
-    printToDisplay("stock1", 0, display.height() * 50 / 100, display.width() / 2, 50, true, &Roboto_Bold8pt7b);
-    printToDisplay("stock2", display.width() / 2, display.height() * 50 / 100, display.width() / 2, 50, true, &Roboto_Bold8pt7b);
-    printToDisplay("quote", 0, display.height() * 30 / 100, display.width(), 25, true, &Roboto_LightItalic6pt7b);
-    printToDisplay("author", 0, display.height() * 15 / 100, display.width(), 15, true);
-    // if (WiFi.status() == WL_CONNECTED)
-    // {
-    //   String ip = WiFi.localIP().toString();
-    //   String ipString = "WiFi addr: " + ip;
-    //   printToDisplay(ipString.c_str(), 0, display.height() - 10, display.width() / 2, 20, &Roboto_Regular4pt7b);
-    //   // if (GET)
-    //   // {
-    //   //   getQuote();
-    //   //   getStocks("ET.TO", left);
-    //   //   getStocks("BTC-CAD", right);
-    //   //   GET = false;
-    //   // }
-    // }
-    // else
-    // {
-    //   printToDisplay("No WiFi", 0, display.height() - 10, display.width() / 2, 20, &Roboto_Regular4pt7b);
-    // }
+    // printToDisplay("jira tickets", 0, 0, display.width(), 25, false, &Roboto_Regular8pt7b);
+    // printToDisplay("wifi status", 0, 0, display.width() / 2, 10, true, &Roboto_Regular4pt7b);
+
+    // printToDisplay("stock1", 0, display.height() * 60 / 100, display.width() / 2, 30, true, &Roboto_Bold8pt7b);
+    // printToDisplay("stock2", display.width() / 2, display.height() * 60 / 100, display.width() / 2, 30, true, &Roboto_Bold8pt7b);
+
+    // printToDisplay("stock1 price", 0, display.height() * 48 / 100, display.width() / 2, 20, true);
+    // printToDisplay("stock2 price", display.width() / 2, display.height() * 48 / 100, display.width() / 2, 20, true);
+
+    // printToDisplay("quote", 0, display.height() * 25 / 100, display.width(), 25, true, &Roboto_LightItalic6pt7b);
+    // printToDisplay("author", 0, display.height() * 15 / 100, display.width(), 13, true);
+    if (WiFi.status() == WL_CONNECTED)
+    {
+      String ip = WiFi.localIP().toString();
+      String ipString = "WiFi addr: " + ip;
+      printToDisplay(ipString.c_str(), 0, 0, display.width() / 2, 10, true, &Roboto_Regular4pt7b);
+      if (GET)
+      {
+        getQuote();
+        getStocks("ET.TO", left);
+        getStocks("BTC-CAD", right);
+        GET = false;
+      }
+    }
+    else
+    {
+      printToDisplay("No WiFi", 0, 0, display.width() / 2, 10, true, &Roboto_Regular4pt7b);
+    }
   }
   else
   {
     String statusString = "Hostname: " + hostname + "    IP: 192.168.4.1";
-    // printToDisplay(statusString.c_str(), 0, display.height() - 10, display.width() / 2, 20, &Roboto_Regular4pt7b);
+    printToDisplay(statusString.c_str(), 0, 0, display.width() / 2, 10, true, &Roboto_Regular4pt7b);
   }
 };
