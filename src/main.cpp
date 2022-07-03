@@ -70,14 +70,6 @@ const uint8_t AP_SET = 6;
 const uint8_t USERNAME_INDEX = 7;
 const uint8_t IDENTITY_INDEX = 8;
 
-// Position options for text on display
-enum xPosition
-{
-  center,
-  left,
-  right
-};
-
 #include <wifi_utils.h>
 #include <eeprom_utils.h>
 
@@ -345,56 +337,43 @@ void handlePostWifi(HTTPRequest *req, HTTPResponse *res)
   }
 }
 
-void printToDisplay(const char *text, int heightRatio, const GFXfont *font = &Roboto_Regular6pt7b, xPosition xpos = center)
+void printToDisplay(const char *text, uint16_t windowX, uint16_t windowY, uint16_t windowW, uint16_t windowH, bool inverted = false, const GFXfont *font = &Roboto_Light6pt7b)
 {
-  int16_t bbx = 264;
-  int16_t bby = 176;
-  uint16_t bbw = 0;
-  uint16_t bbh = 0;
-
+  bool test = true;
   display.setRotation(1);
   display.setFont(font);
-  display.setTextColor(GxEPD_BLACK);
+  display.setTextColor(GxEPD_WHITE);
   int16_t tbx, tby;
   uint16_t tbw, tbh;
-  int16_t tx, ty;
   display.getTextBounds(text, 0, 0, &tbx, &tby, &tbw, &tbh);
-
-  switch (xpos)
+  uint16_t x = windowX + (windowW - tbw) / 2;
+  uint16_t y;
+  uint16_t wy;
+  if (inverted)
   {
-  case center:
-    tx = max(0, ((display.width() - tbw) / 2));
-    break;
-  case left:
-    tx = max(0, ((display.width() * 3 / 10 - tbw)));
-    break;
-  case right:
-    tx = max(0, ((display.width() * 8 / 10 - tbw)));
-    break;
+    y = display.height() - ((windowH - tbh - tby) / 2) - windowY;
+    wy = display.height() - windowH - windowY;
   }
-
-  ty = max(0, (display.height() * heightRatio / 100 - tbh / 2));
-
-  bbx = min(bbx, tx);
-  bby = min(bby, ty);
-  bbw = max(bbw, tbw);
-  bbh = max(bbh, tbh);
-  // calculate the cursor
-  uint16_t x = bbx - tbx;
-  uint16_t y = bby - tby;
-
-  // display.setFullWindow();
-  display.setPartialWindow(bbx, bby, bbw, bbh);
+  else
+  {
+    y = (windowH + tbh) / 2;
+    wy = windowY;
+  }
+  display.setPartialWindow(windowX, wy, windowW, windowH);
   display.firstPage();
   do
   {
     display.fillScreen(GxEPD_WHITE);
     display.setCursor(x, y);
+    if (test)
+    {
+      display.fillRect(windowX, wy, windowW, windowH, GxEPD_BLACK);
+    }
     display.println(text);
   } while (display.nextPage());
 }
 
-void getStocks(String ticker, xPosition xpos)
+void getStocks(String ticker)
 {
 
   HTTPClient http;
@@ -421,8 +400,8 @@ void getStocks(String ticker, xPosition xpos)
     String priceString = String(price);
     String prevCloseString = String(prevClose);
 
-    printToDisplay(symbol, 40, &Roboto_Bold8pt7b, xpos);
-    printToDisplay(priceString.c_str(), 50, &Roboto_Regular6pt7b, xpos);
+    // printToDisplay(symbol, 40, &Roboto_Bold8pt7b, xpos);
+    // printToDisplay(priceString.c_str(), 50, &Roboto_Regular6pt7b, xpos);
     // printToDisplay(prevCloseString.c_str(), 50);
   }
   else
@@ -454,14 +433,8 @@ void getQuote()
     const char *contentString = doc["content"];
     const char *author = doc["author"];
 
-    // char contentArray[contentString.size() + 1];
-
-    // for (int i = 0; i < sizeof(contentArray); i++)
-    // {
-    //   contentArray[i] = contentString[i];
-    // }
-    printToDisplay(author, 82, &Roboto_Regular6pt7b);
-    printToDisplay(contentString, 70, &Roboto_LightItalic6pt7b);
+    // printToDisplay(author, 82, &Roboto_Regular6pt7b);
+    // printToDisplay(contentString, 70, &Roboto_LightItalic6pt7b);
   }
   else
   {
@@ -567,28 +540,34 @@ void loop()
 
   if (apmode == 0)
   {
-    if (WiFi.status() == WL_CONNECTED)
-    {
-      String ip = WiFi.localIP().toString();
-      String ipString = "WiFi addr: " + ip;
-      printToDisplay(ipString.c_str(), 95, &Roboto_Regular4pt7b, left);
 
-      if (GET)
-      {
-        getQuote();
-        getStocks("ET.TO", left);
-        getStocks("BTC-CAD", right);
-        GET = false;
-      }
-    }
-    else
-    {
-      printToDisplay("No WiFi", 95, &Roboto_Regular4pt7b, left);
-    }
+    printToDisplay("jira tickets", 0, 0, display.width(), 25, false, &Roboto_Regular8pt7b);
+    printToDisplay("wifi status", 0, 0, display.width() / 2, 20, true);
+    printToDisplay("stock1", 0, display.height() * 50 / 100, display.width() / 2, 50, true, &Roboto_Bold8pt7b);
+    printToDisplay("stock2", display.width() / 2, display.height() * 50 / 100, display.width() / 2, 50, true, &Roboto_Bold8pt7b);
+    printToDisplay("quote", 0, display.height() * 30 / 100, display.width(), 25, true, &Roboto_LightItalic6pt7b);
+    printToDisplay("author", 0, display.height() * 15 / 100, display.width(), 15, true);
+    // if (WiFi.status() == WL_CONNECTED)
+    // {
+    //   String ip = WiFi.localIP().toString();
+    //   String ipString = "WiFi addr: " + ip;
+    //   printToDisplay(ipString.c_str(), 0, display.height() - 10, display.width() / 2, 20, &Roboto_Regular4pt7b);
+    //   // if (GET)
+    //   // {
+    //   //   getQuote();
+    //   //   getStocks("ET.TO", left);
+    //   //   getStocks("BTC-CAD", right);
+    //   //   GET = false;
+    //   // }
+    // }
+    // else
+    // {
+    //   printToDisplay("No WiFi", 0, display.height() - 10, display.width() / 2, 20, &Roboto_Regular4pt7b);
+    // }
   }
   else
   {
     String statusString = "Hostname: " + hostname + "    IP: 192.168.4.1";
-    printToDisplay(statusString.c_str(), 95, &Roboto_Regular4pt7b, left);
+    // printToDisplay(statusString.c_str(), 0, display.height() - 10, display.width() / 2, 20, &Roboto_Regular4pt7b);
   }
 };
