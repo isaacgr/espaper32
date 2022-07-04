@@ -61,9 +61,13 @@ uint8_t g_Power = 1;
 uint8_t apmode = 0;
 String hostname = "ESP-";
 bool RESET = false;
-bool GET = false;
-int TIMER_COUNTER = 0;
-int GET_PERIOD = 600;
+bool GET_QUOTE = false;
+bool GET_STOCKS = false;
+bool GET_TRAVEL_TIME = false;
+int GET_QUOTE_COUNTER = 0;
+int GET_STOCKS_COUNTER = 0;
+int GET_TRAVEL_TIME_COUNTER = 0;
+int GET_PERIOD = 60;
 hw_timer_t *timer = NULL;
 
 enum xPosition
@@ -81,11 +85,24 @@ String token = "?interval=1d";
 
 void IRAM_ATTR timer1_ISR(void)
 {
-  TIMER_COUNTER++;
-  if (TIMER_COUNTER == GET_PERIOD) // update every 10 mins
+  GET_QUOTE_COUNTER++;
+  GET_STOCKS_COUNTER++;
+  GET_TRAVEL_TIME_COUNTER++;
+
+  if (GET_STOCKS_COUNTER == GET_PERIOD * 10)
   {
-    GET = true;
-    TIMER_COUNTER = 0;
+    GET_STOCKS = true;
+    GET_STOCKS_COUNTER = 0;
+  }
+  if (GET_TRAVEL_TIME_COUNTER == GET_PERIOD * 30)
+  {
+    GET_TRAVEL_TIME = true;
+    GET_TRAVEL_TIME_COUNTER = 0;
+  }
+  if (GET_QUOTE_COUNTER == GET_PERIOD * 1440)
+  {
+    GET_QUOTE = true;
+    GET_QUOTE_COUNTER = 0;
   }
 }
 
@@ -167,7 +184,7 @@ SSLCert *getCertificate()
 {
   SSLCert *cert;
 
-  // Try to open key and cert file to see if they exist, if not, make them
+  // Try to open key and cert file to see if they exist
   if (certFileExists())
   {
     Serial.println(F("Certificate FOUND in SPIFFS"));
@@ -540,6 +557,7 @@ void setup()
   }
   Serial.println("SPIFFS has been mounted.");
   SPIFFS.begin();
+
   // Now that SPIFFS is ready, we can create or load the certificate
   SSLCert *cert = getCertificate();
   if (cert == NULL)
@@ -562,7 +580,10 @@ void setup()
   ResourceNode *postWifiNode = new ResourceNode("/api/wifi", "POST", &handlePostWifi);
   server->registerNode(postWifiNode);
 
-  GET = true;
+  GET_QUOTE = true;
+  GET_STOCKS = true;
+  GET_TRAVEL_TIME = true;
+
   apmode = EEPROM.read(AP_SET);
   setupWifi(hostname, ENTERPRISE_MODE);
 
@@ -587,8 +608,6 @@ void setup()
 
 void loop()
 {
-  server->loop();
-
   if (RESET)
   {
     RESET = !RESET;
@@ -603,13 +622,21 @@ void loop()
       String ip = WiFi.localIP().toString();
       String ipString = "IP: " + ip;
       printToDisplay(ipString.c_str(), 0, 0, display.width() / 2, 10, true, &Roboto_Regular4pt7b);
-      if (GET)
+      if (GET_QUOTE)
       {
         getQuote();
+        GET_QUOTE = false;
+      }
+      if (GET_STOCKS)
+      {
         getStocks("ET.TO", left);
         getStocks("BTC-CAD", right);
+        GET_STOCKS = false;
+      }
+      if (GET_TRAVEL_TIME)
+      {
         getTravelTime(right);
-        GET = false;
+        GET_TRAVEL_TIME = false;
       }
     }
     else
@@ -619,6 +646,7 @@ void loop()
   }
   else
   {
+    server->loop();
     String statusString = "Hostname: " + hostname + "    IP: 192.168.4.1";
     printToDisplay(statusString.c_str(), 0, 0, display.width(), 10, true, &Roboto_Regular4pt7b);
   }
