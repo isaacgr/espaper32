@@ -30,16 +30,3 @@ void writeWifiEEPROM(char ssid[], char identity[], char username[], char passwor
   EEPROM.write(WIFI_SET, 1);
   EEPROM.commit();
 }
-
-// void writeDeviceNameEEPROM(char name[])
-// {
-//   if (strlen(name) > 50)
-//   {
-//     throw std::length_error("Cannot exceed 50 characters");
-//   }
-//   int index = 202;
-//   EEPROM.write(MDNS_INDEX, index);
-//   index += writeString(index, name);
-//   EEPROM.write(MDNS_SET, 1);
-//   EEPROM.commit();
-// }

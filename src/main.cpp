@@ -26,6 +26,16 @@
 #define POWER_BUTTON 21
 #define ENTERPRISE_MODE 15
 
+// EEPROM addresses for state
+#define SSID_INDEX 1
+#define PASSWORD_INDEX 2
+#define WIFI_SET 3
+#define MDNS_INDEX 4
+#define MDNS_SET 5
+#define AP_SET 6
+#define USERNAME_INDEX 7
+#define IDENTITY_INDEX 8
+
 // We need to specify some content-type mapping, so the resources get delivered with the
 // right content type and are displayed correctly in the browser
 char contentTypes[][2][32] = {
@@ -53,7 +63,7 @@ String hostname = "ESP-";
 bool RESET = false;
 bool GET = false;
 int TIMER_COUNTER = 0;
-int GET_PERIOD = 600; // frequency to post, in seconds
+int GET_PERIOD = 600;
 hw_timer_t *timer = NULL;
 
 enum xPosition
@@ -65,16 +75,6 @@ enum xPosition
 const char *quotesUrl = "https://api.quotable.io/random?tags=technology|success|business|inspirational|education|future|science|famous-quotes|life|literature|wisdom&maxLength=45";
 String stockUrl = "https://query1.finance.yahoo.com/v8/finance/chart/";
 String token = "?interval=1d";
-
-// EEPROM addresses for state
-const uint8_t SSID_INDEX = 1;
-const uint8_t PASSWORD_INDEX = 2;
-const uint8_t WIFI_SET = 3;
-const uint8_t MDNS_INDEX = 4;
-const uint8_t MDNS_SET = 5;
-const uint8_t AP_SET = 6;
-const uint8_t USERNAME_INDEX = 7;
-const uint8_t IDENTITY_INDEX = 8;
 
 #include <wifi_utils.h>
 #include <eeprom_utils.h>
@@ -379,6 +379,44 @@ void printToDisplay(const char *text, uint16_t windowX, uint16_t windowY, uint16
   } while (display.nextPage());
 }
 
+void getTravelTime(xPosition xPos)
+{
+  HTTPClient http;
+
+  http.begin(tavelTimeUrl);
+  int httpResponseCode = http.GET();
+  if (httpResponseCode > 0)
+  {
+    StaticJsonDocument<1536> doc;
+    DeserializationError error = deserializeJson(doc, http.getString());
+    if (error)
+    {
+      Serial.print(F("deserializeJson() failed: "));
+      Serial.println(error.f_str());
+      return;
+    }
+
+    JsonObject result = doc["resourceSets"][0]["resources"][0];
+    float travelDurationTraffic = result["travelDurationTraffic"];
+    String travelDurationString = String(travelDurationTraffic / 60) + " mins to home";
+
+    if (xPos == left)
+    {
+      printToDisplay(travelDurationString.c_str(), 0, display.height() * 60 / 100, display.width() / 2, 30, true);
+    }
+    else if (xPos == right)
+    {
+      printToDisplay(travelDurationString.c_str(), display.width() / 2, display.height() * 60 / 100, display.width() / 2, 30, true);
+    }
+  }
+  else
+  {
+    Serial.print("Error code: ");
+    Serial.println(httpResponseCode);
+  }
+  http.end();
+}
+
 void getStocks(String ticker, xPosition xPos)
 {
 
@@ -404,20 +442,25 @@ void getStocks(String ticker, xPosition xPos)
     float prevClose = chart_result["meta"]["chartPreviousClose"];
 
     String priceString = String(price);
-    String prevCloseString = String(prevClose);
+    String direction = "<";
+
+    if (price < prevClose)
+    {
+      direction = ">";
+    }
+
+    String value = direction + " " + priceString;
 
     if (xPos == left)
     {
-      printToDisplay(symbol, 0, display.height() * 60 / 100, display.width() / 2, 30, true, &Roboto_Bold8pt7b);
-      printToDisplay(priceString.c_str(), 0, display.height() * 48 / 100, display.width() / 2, 20, true);
+      printToDisplay(symbol, 0, display.height() * 60 / 100, display.width() / 4, 30, true, &Roboto_Bold8pt7b);
+      printToDisplay(value.c_str(), 0, display.height() * 48 / 100, display.width() / 4, 20, true);
     }
     else if (xPos == right)
     {
-      printToDisplay(symbol, display.width() / 2, display.height() * 60 / 100, display.width() / 2, 30, true, &Roboto_Bold8pt7b);
-      printToDisplay(priceString.c_str(), display.width() / 2, display.height() * 48 / 100, display.width() / 2, 20, true);
+      printToDisplay(symbol, display.width() / 4, display.height() * 60 / 100, display.width() / 4, 30, true, &Roboto_Bold8pt7b);
+      printToDisplay(value.c_str(), display.width() / 4, display.height() * 48 / 100, display.width() / 4, 20, true);
     }
-
-    // printToDisplay(prevCloseString.c_str(), 50);
   }
   else
   {
@@ -555,28 +598,17 @@ void loop()
 
   if (apmode == 0)
   {
-
-    // printToDisplay("jira tickets", 0, 0, display.width(), 25, false, &Roboto_Regular8pt7b);
-    // printToDisplay("wifi status", 0, 0, display.width() / 2, 10, true, &Roboto_Regular4pt7b);
-
-    // printToDisplay("stock1", 0, display.height() * 60 / 100, display.width() / 2, 30, true, &Roboto_Bold8pt7b);
-    // printToDisplay("stock2", display.width() / 2, display.height() * 60 / 100, display.width() / 2, 30, true, &Roboto_Bold8pt7b);
-
-    // printToDisplay("stock1 price", 0, display.height() * 48 / 100, display.width() / 2, 20, true);
-    // printToDisplay("stock2 price", display.width() / 2, display.height() * 48 / 100, display.width() / 2, 20, true);
-
-    // printToDisplay("quote", 0, display.height() * 25 / 100, display.width(), 25, true, &Roboto_LightItalic6pt7b);
-    // printToDisplay("author", 0, display.height() * 15 / 100, display.width(), 13, true);
     if (WiFi.status() == WL_CONNECTED)
     {
       String ip = WiFi.localIP().toString();
-      String ipString = "WiFi addr: " + ip;
+      String ipString = "IP: " + ip;
       printToDisplay(ipString.c_str(), 0, 0, display.width() / 2, 10, true, &Roboto_Regular4pt7b);
       if (GET)
       {
         getQuote();
         getStocks("ET.TO", left);
         getStocks("BTC-CAD", right);
+        getTravelTime(right);
         GET = false;
       }
     }
@@ -588,6 +620,6 @@ void loop()
   else
   {
     String statusString = "Hostname: " + hostname + "    IP: 192.168.4.1";
-    printToDisplay(statusString.c_str(), 0, 0, display.width() / 2, 10, true, &Roboto_Regular4pt7b);
+    printToDisplay(statusString.c_str(), 0, 0, display.width(), 10, true, &Roboto_Regular4pt7b);
   }
 };
