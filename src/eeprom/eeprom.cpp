@@ -1,4 +1,8 @@
+#include <eeprom/eeprom.h>
 #include <EEPROM.h>
+#include <defines/defines.h>
+#include <string>
+#include <stdexcept>
 
 int writeString(uint8_t addr, const char data[])
 {

@@ -1,6 +1,10 @@
 #include "esp_wpa2.h"
 #include "esp_wifi.h"
 #include "esp_wpa2.h"
+#include "wifi.h"
+#include <defines/defines.h>
+#include <EEPROM.h>
+#include <WiFi.h>
 
 // AP mode password
 char WiFiAPPSK[] = "ledwifi32";
