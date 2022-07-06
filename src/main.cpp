@@ -41,6 +41,8 @@ hw_timer_t *timer = NULL;
 
 const char *quotesUrl = "https://api.quotable.io/random?tags=technology|success|business|inspirational|education|future|science|famous-quotes|life|literature|wisdom&maxLength=45";
 const char *tavelTimeUrl = "https://dev.virtualearth.net/REST/V1/Routes/Driving?o=json&wp.0=43.39252853393555,-79.77173614501953&wp.1=43.251670837402344,-79.88003540039062&avoid=minimizeTolls&key=AnIS3IEKS30ivDfBr0AWq36z04STmWOiwPsGbECvRwh7kxHEEHqYlEiRVsMMvmvM&routeAttributes=routeSummariesOnly";
+const char *tavelTimeToGymUrl = "https://dev.virtualearth.net/REST/V1/Routes/Driving?o=json&wp.0=43.39252853393555,-79.77173614501953&wp.1=43.2515715,-79.8475542&avoid=minimizeTolls&key=AnIS3IEKS30ivDfBr0AWq36z04STmWOiwPsGbECvRwh7kxHEEHqYlEiRVsMMvmvM&routeAttributes=routeSummariesOnly";
+
 String stockUrl = "https://query1.finance.yahoo.com/v8/finance/chart/";
 String token = "?interval=1d";
 
@@ -153,7 +155,7 @@ void printToDisplay(const char *text, uint16_t windowX, uint16_t windowY, uint16
   } while (display.nextPage());
 }
 
-void getTravelTime(const char *url, xPosition xPos)
+void getTravelTime(const char *url, String location, xPosition xPos)
 {
   HTTPClient http;
 
@@ -172,15 +174,15 @@ void getTravelTime(const char *url, xPosition xPos)
 
     JsonObject result = doc["resourceSets"][0]["resources"][0];
     float travelDurationTraffic = result["travelDurationTraffic"];
-    String travelDurationString = String(travelDurationTraffic / 60) + " mins to home";
+    String travelDurationString = String(travelDurationTraffic / 60) + "m to " + location;
 
-    if (xPos == left)
+    if (xPos == top)
     {
-      printToDisplay(travelDurationString.c_str(), 0, display.height() * 60 / 100, display.width() / 2, 30, true);
+      printToDisplay(travelDurationString.c_str(), display.width() / 2, display.height() * 65 / 100, display.width() / 2, 20, true);
     }
-    else if (xPos == right)
+    else if (xPos == bottom)
     {
-      printToDisplay(travelDurationString.c_str(), display.width() / 2, display.height() * 60 / 100, display.width() / 2, 30, true);
+      printToDisplay(travelDurationString.c_str(), display.width() / 2, display.height() * 50 / 100, display.width() / 2, 20, true);
     }
   }
   else
@@ -392,7 +394,8 @@ void loop()
       }
       if (GET_TRAVEL_TIME)
       {
-        getTravelTime(tavelTimeUrl, right);
+        getTravelTime(tavelTimeUrl, "home", top);
+        getTravelTime(tavelTimeToGymUrl, "the gym", bottom);
         GET_TRAVEL_TIME = false;
       }
     }

@@ -22,7 +22,9 @@ DEFINITIONS
 enum xPosition
 {
   left,
-  right
+  right,
+  top,
+  bottom
 };
 
 #endif
