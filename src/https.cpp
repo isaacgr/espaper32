@@ -1,11 +1,22 @@
-#include "https.h"
-#include <SPIFFS.h>
-#include <defines/defines.h>
-#include <EEPROM.h>
 #include <ArduinoJson.h>
-#include <eeprom/eeprom.h>
+#include <SPIFFS.h>
+#include <EEPROM.h>
+#include "defines.h"
+#include "https.h"
+#include "eeprom_utils.h"
 
 using namespace httpsserver;
+
+// We need to specify some content-type mapping, so the resources get delivered with the
+// right content type and are displayed correctly in the browser
+char contentTypes[][2][32] = {
+    {".html", "text/html"},
+    {".css", "text/css"},
+    {".js", "application/javascript"},
+    {".json", "application/json"},
+    {".png", "image/png"},
+    {".jpg", "image/jpg"},
+    {"", ""}};
 
 bool certFileExists()
 {

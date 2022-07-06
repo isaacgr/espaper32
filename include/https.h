@@ -12,6 +12,5 @@ void handleSPIFFS(HTTPRequest *req, HTTPResponse *res);
 void handleGetWifi(HTTPRequest *req, HTTPResponse *res);
 void handlePostWifi(HTTPRequest *req, HTTPResponse *res);
 SSLCert *getCertificate();
-HTTPSServer *server;
 
 #endif

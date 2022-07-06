@@ -1,5 +1,5 @@
-#ifndef EEPROM_H
-#define EEPROM_H
+#ifndef EEPROM_UTILS_H
+#define EEPROM_UTILS_H
 
 #include <Arduino.h>
 

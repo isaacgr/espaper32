@@ -5,10 +5,10 @@
 #include <SPIFFS.h>
 #include <WiFi.h>
 #include <HTTPClient.h>
-#include "defines/defines.h"
-#include "wifi/wifi.h"
-#include "eeprom/eeprom.h"
-#include "server/https.h"
+#include "defines.h"
+#include "wifi_utils.h"
+#include "eeprom_utils.h"
+#include "https.h"
 
 #include <GxEPD2_BW.h>
 #include <Fonts/Roboto_Regular4pt7b.h>
@@ -22,6 +22,29 @@
 // #define MAX_HEIGHT(EPD) (EPD::HEIGHT <= MAX_DISPLAY_BUFFER_SIZE / (EPD::WIDTH / 8) ? EPD::HEIGHT : MAX_DISPLAY_BUFFER_SIZE / (EPD::WIDTH / 8))
 
 GxEPD2_BW<GxEPD2_270, GxEPD2_270::HEIGHT> display(GxEPD2_270(/*CS=5*/ SS, /*DC=*/17, /*RST=*/16, /*BUSY=*/4)); // GDEW027W3
+
+/*****************
+  GLOBALS
+******************/
+uint8_t g_Power = 1;
+uint8_t apMode = 0;
+String hostname = "ESP-";
+bool RESET = false;
+bool GET_QUOTE = false;
+bool GET_STOCKS = false;
+bool GET_TRAVEL_TIME = false;
+int GET_QUOTE_COUNTER = 0;
+int GET_STOCKS_COUNTER = 0;
+int GET_TRAVEL_TIME_COUNTER = 0;
+int GET_PERIOD = 60;
+hw_timer_t *timer = NULL;
+
+const char *quotesUrl = "https://api.quotable.io/random?tags=technology|success|business|inspirational|education|future|science|famous-quotes|life|literature|wisdom&maxLength=45";
+const char *tavelTimeUrl = "https://dev.virtualearth.net/REST/V1/Routes/Driving?o=json&wp.0=43.39252853393555,-79.77173614501953&wp.1=43.251670837402344,-79.88003540039062&avoid=minimizeTolls&key=AnIS3IEKS30ivDfBr0AWq36z04STmWOiwPsGbECvRwh7kxHEEHqYlEiRVsMMvmvM&routeAttributes=routeSummariesOnly";
+String stockUrl = "https://query1.finance.yahoo.com/v8/finance/chart/";
+String token = "?interval=1d";
+
+HTTPSServer *server;
 
 void IRAM_ATTR timer1_ISR(void)
 {
@@ -76,8 +99,8 @@ void IRAM_ATTR POWER_ISR()
       }
       else if (diff >= toggle_ap_mode_time && diff < factory_reset_time)
       {
-        apmode = !apmode;
-        EEPROM.write(AP_SET, apmode);
+        apMode = !apMode;
+        EEPROM.write(AP_SET, apMode);
         RESET = true;
       }
       else if (diff >= factory_reset_time)
@@ -130,11 +153,11 @@ void printToDisplay(const char *text, uint16_t windowX, uint16_t windowY, uint16
   } while (display.nextPage());
 }
 
-void getTravelTime(xPosition xPos)
+void getTravelTime(const char *url, xPosition xPos)
 {
   HTTPClient http;
 
-  http.begin(tavelTimeUrl);
+  http.begin(url);
   int httpResponseCode = http.GET();
   if (httpResponseCode > 0)
   {
@@ -168,7 +191,7 @@ void getTravelTime(xPosition xPos)
   http.end();
 }
 
-void getStocks(String ticker, xPosition xPos)
+void getStocks(String stockUrl, String ticker, xPosition xPos)
 {
 
   HTTPClient http;
@@ -221,7 +244,7 @@ void getStocks(String ticker, xPosition xPos)
   http.end();
 }
 
-void getQuote()
+void getQuote(const char *quotesUrl)
 {
 
   HTTPClient http;
@@ -318,8 +341,8 @@ void setup()
   GET_STOCKS = true;
   GET_TRAVEL_TIME = true;
 
-  apmode = EEPROM.read(AP_SET);
-  setupWifi(hostname, ENTERPRISE_MODE);
+  apMode = EEPROM.read(AP_SET);
+  setupWifi(hostname, apMode, ENTERPRISE_MODE);
 
   Serial.println("Starting server...");
   server->start();
@@ -349,7 +372,7 @@ void loop()
     ESP.restart();
   }
 
-  if (apmode == 0)
+  if (apMode == 0)
   {
     if (WiFi.status() == WL_CONNECTED)
     {
@@ -358,18 +381,18 @@ void loop()
       printToDisplay(ipString.c_str(), 0, 0, display.width() / 2, 10, true, &Roboto_Regular4pt7b);
       if (GET_QUOTE)
       {
-        getQuote();
+        getQuote(quotesUrl);
         GET_QUOTE = false;
       }
       if (GET_STOCKS)
       {
-        getStocks("ET.TO", left);
-        getStocks("BTC-CAD", right);
+        getStocks(stockUrl, "ET.TO", left);
+        getStocks(stockUrl, "BTC-CAD", right);
         GET_STOCKS = false;
       }
       if (GET_TRAVEL_TIME)
       {
-        getTravelTime(right);
+        getTravelTime(tavelTimeUrl, right);
         GET_TRAVEL_TIME = false;
       }
     }

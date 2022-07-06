@@ -1,10 +1,10 @@
+#include <EEPROM.h>
+#include <WiFi.h>
 #include "esp_wpa2.h"
 #include "esp_wifi.h"
 #include "esp_wpa2.h"
-#include "wifi.h"
-#include <defines/defines.h>
-#include <EEPROM.h>
-#include <WiFi.h>
+#include "wifi_utils.h"
+#include "defines.h"
 
 // AP mode password
 char WiFiAPPSK[] = "ledwifi32";
@@ -49,7 +49,7 @@ void WiFiStationDisconnected(WiFiEvent_t event, WiFiEventInfo_t info)
   WiFi.begin(ssid, password);
 }
 
-void setupWifi(String hostname, int enterpriseModePin)
+void setupWifi(String hostname, int apMode, int enterpriseModePin)
 {
   // Set Hostname.
   uint64_t chipid = ESP.getEfuseMac();
@@ -66,7 +66,7 @@ void setupWifi(String hostname, int enterpriseModePin)
 
   WiFi.setHostname(hostnameChar);
 
-  if (apmode != 0)
+  if (apMode != 0)
   {
     WiFi.mode(WIFI_AP);
     WiFi.softAP(hostnameChar, WiFiAPPSK);
