@@ -1,11 +1,14 @@
 #include <Arduino.h>
-#include <WebServer.h>
 #include <EEPROM.h>
 #include <ArduinoJson.h>
 #include <FS.h>
 #include <SPIFFS.h>
-#include <HTTPClient.h>
 #include <WiFi.h>
+#include <HTTPClient.h>
+#include "defines.h"
+#include "wifi_utils.h"
+#include "eeprom_utils.h"
+#include "https.h"
 
 #include <GxEPD2_BW.h>
 #include <Fonts/Roboto_Regular4pt7b.h>
@@ -18,54 +21,53 @@
 // #define MAX_DISPLAY_BUFFER_SIZE 131072ul // e.g. half of available ram
 // #define MAX_HEIGHT(EPD) (EPD::HEIGHT <= MAX_DISPLAY_BUFFER_SIZE / (EPD::WIDTH / 8) ? EPD::HEIGHT : MAX_DISPLAY_BUFFER_SIZE / (EPD::WIDTH / 8))
 
-#define POWER_BUTTON 21
-#define ENTERPRISE_MODE 15
-
 GxEPD2_BW<GxEPD2_270, GxEPD2_270::HEIGHT> display(GxEPD2_270(/*CS=5*/ SS, /*DC=*/17, /*RST=*/16, /*BUSY=*/4)); // GDEW027W3
 
-WebServer server(80);
+/*****************
+  GLOBALS
+******************/
 uint8_t g_Power = 1;
-uint8_t apmode = 0;
+uint8_t apMode = 0;
 String hostname = "ESP-";
 bool RESET = false;
-bool GET = false;
-int TIMER_COUNTER = 0;
-int GET_PERIOD = 600; // frequency to post, in seconds
+bool GET_QUOTE = false;
+bool GET_STOCKS = false;
+bool GET_TRAVEL_TIME = false;
+int GET_QUOTE_COUNTER = 0;
+int GET_STOCKS_COUNTER = 0;
+int GET_TRAVEL_TIME_COUNTER = 0;
+int GET_PERIOD = 60;
 hw_timer_t *timer = NULL;
 
-const char *quotesUrl = "https://api.quotable.io/random?tags=technology|success|business|inspirational|education|future|science|famout-quotes|life|literature|wisdom&maxLength=45";
+const char *quotesUrl = "https://api.quotable.io/random?tags=technology|success|business|inspirational|education|future|science|famous-quotes|life|literature|wisdom&maxLength=45";
+const char *tavelTimeUrl = "https://dev.virtualearth.net/REST/V1/Routes/Driving?o=json&wp.0=43.39252853393555,-79.77173614501953&wp.1=43.251670837402344,-79.88003540039062&avoid=minimizeTolls&key=AnIS3IEKS30ivDfBr0AWq36z04STmWOiwPsGbECvRwh7kxHEEHqYlEiRVsMMvmvM&routeAttributes=routeSummariesOnly";
+const char *tavelTimeToGymUrl = "https://dev.virtualearth.net/REST/V1/Routes/Driving?o=json&wp.0=43.39252853393555,-79.77173614501953&wp.1=43.2515715,-79.8475542&avoid=minimizeTolls&key=AnIS3IEKS30ivDfBr0AWq36z04STmWOiwPsGbECvRwh7kxHEEHqYlEiRVsMMvmvM&routeAttributes=routeSummariesOnly";
+
 String stockUrl = "https://query1.finance.yahoo.com/v8/finance/chart/";
 String token = "?interval=1d";
 
-// EEPROM addresses for state
-const uint8_t SSID_INDEX = 1;
-const uint8_t PASSWORD_INDEX = 2;
-const uint8_t WIFI_SET = 3;
-const uint8_t MDNS_INDEX = 4;
-const uint8_t MDNS_SET = 5;
-const uint8_t AP_SET = 6;
-const uint8_t USERNAME_INDEX = 7;
-const uint8_t IDENTITY_INDEX = 8;
-
-// Position options for text on display
-enum xPosition
-{
-  center,
-  left,
-  right
-};
-
-#include <wifi_utils.h>
-#include <eeprom_utils.h>
-#include <file_manager.h>
+HTTPSServer *server;
 
 void IRAM_ATTR timer1_ISR(void)
 {
-  TIMER_COUNTER++;
-  if (TIMER_COUNTER == GET_PERIOD) // update every 10 mins
+  GET_QUOTE_COUNTER++;
+  GET_STOCKS_COUNTER++;
+  GET_TRAVEL_TIME_COUNTER++;
+
+  if (GET_STOCKS_COUNTER == GET_PERIOD * 10)
   {
-    GET = true;
-    TIMER_COUNTER = 0;
+    GET_STOCKS = true;
+    GET_STOCKS_COUNTER = 0;
+  }
+  if (GET_TRAVEL_TIME_COUNTER == GET_PERIOD * 30)
+  {
+    GET_TRAVEL_TIME = true;
+    GET_TRAVEL_TIME_COUNTER = 0;
+  }
+  if (GET_QUOTE_COUNTER == GET_PERIOD * 1440)
+  {
+    GET_QUOTE = true;
+    GET_QUOTE_COUNTER = 0;
   }
 }
 
@@ -99,8 +101,8 @@ void IRAM_ATTR POWER_ISR()
       }
       else if (diff >= toggle_ap_mode_time && diff < factory_reset_time)
       {
-        apmode = !apmode;
-        EEPROM.write(AP_SET, apmode);
+        apMode = !apMode;
+        EEPROM.write(AP_SET, apMode);
         RESET = true;
       }
       else if (diff >= factory_reset_time)
@@ -117,114 +119,81 @@ void IRAM_ATTR POWER_ISR()
   }
 }
 
-void setupWeb()
+void printToDisplay(const char *text, uint16_t windowX, uint16_t windowY, uint16_t windowW, uint16_t windowH, bool inverted = false, const GFXfont *font = &Roboto_Light6pt7b)
 {
-  server.on(
-      "/wifi", HTTP_POST, []()
-      {
-    String ssid = server.arg("ssid");
-    String password = server.arg("password");
-    String username = server.arg("username");
-    String identity = server.arg("identity");
-    try
-    {
-      writeWifiEEPROM(toCharArray(ssid), toCharArray(identity), toCharArray(username), toCharArray(password));
-      server.send(200, "text/plain", "OK");
-    }
-    catch (const std::length_error &e)
-    {
-      StaticJsonDocument<32> root;
-      root["error"] = e.what();
-      String error;
-      serializeJsonPretty(root, error);
-      server.send(400, "application/json", error);
-    } });
-
-  server.on(
-      "/wifi", HTTP_GET, []()
-      {
-      int ssidIndex = EEPROM.read(SSID_INDEX);
-      int passwordIndex = EEPROM.read(PASSWORD_INDEX);
-      int usernameIndex = EEPROM.read(USERNAME_INDEX);
-      int identityIndex = EEPROM.read(IDENTITY_INDEX);
-    try
-    {
-      StaticJsonDocument<256> root;
-      root["password"] = EEPROM.readString(passwordIndex);
-      root["ssid"] = EEPROM.readString(ssidIndex);
-      root["username"] = EEPROM.readString(usernameIndex);
-      root["identity"] = EEPROM.readString(identityIndex);
-      String result;
-      serializeJsonPretty(root, result);
-      server.send(200, "application/json", result);
-    }
-    catch (const std::exception &e)
-    {
-      StaticJsonDocument<32> root;
-      root["error"] = e.what();
-      String error;
-      serializeJsonPretty(root, error);
-      server.send(400, "application/json", error);
-    } });
-
-  server.onNotFound([]()
-                    {
-    if (!handleFileRead(server.uri()))
-    {
-      server.send(404, "text/plain", "Not Found");
-    } });
-}
-
-void printToDisplay(const char *text, int heightRatio, const GFXfont *font = &Roboto_Regular6pt7b, xPosition xpos = center)
-{
-  int16_t bbx = 264;
-  int16_t bby = 176;
-  uint16_t bbw = 0;
-  uint16_t bbh = 0;
-
+  bool test = false;
   display.setRotation(1);
   display.setFont(font);
   display.setTextColor(GxEPD_BLACK);
   int16_t tbx, tby;
   uint16_t tbw, tbh;
-  int16_t tx, ty;
   display.getTextBounds(text, 0, 0, &tbx, &tby, &tbw, &tbh);
-
-  switch (xpos)
+  uint16_t x = windowX + (windowW - tbw) / 2;
+  uint16_t y;
+  uint16_t wy;
+  if (inverted)
   {
-  case center:
-    tx = max(0, ((display.width() - tbw) / 2));
-    break;
-  case left:
-    tx = max(0, ((display.width() * 3 / 10 - tbw)));
-    break;
-  case right:
-    tx = max(0, ((display.width() * 8 / 10 - tbw)));
-    break;
+    y = display.height() - ((windowH - tbh - (tby / 2)) / 2) - windowY;
+    wy = display.height() - windowH - windowY;
   }
-
-  ty = max(0, (display.height() * heightRatio / 100 - tbh / 2));
-
-  bbx = min(bbx, tx);
-  bby = min(bby, ty);
-  bbw = max(bbw, tbw);
-  bbh = max(bbh, tbh);
-  // calculate the cursor
-  uint16_t x = bbx - tbx;
-  uint16_t y = bby - tby;
-
-  // display.setFullWindow();
-  display.setPartialWindow(bbx, bby, bbw, bbh);
+  else
+  {
+    y = (windowH + tbh + (tby / 2)) / 2;
+    wy = windowY;
+  }
+  display.setPartialWindow(windowX, wy, windowW, windowH);
   display.firstPage();
   do
   {
     display.fillScreen(GxEPD_WHITE);
+    if (test)
+    {
+      display.fillRect(windowX, wy, windowW, windowH, GxEPD_BLACK);
+    }
     display.setCursor(x, y);
     display.println(text);
   } while (display.nextPage());
 }
 
-void getStocks(String ticker, xPosition xpos)
+void getTravelTime(const char *url, String location, xPosition xPos)
+{
+  HTTPClient http;
+
+  http.begin(url);
+  int httpResponseCode = http.GET();
+  if (httpResponseCode > 0)
+  {
+    StaticJsonDocument<1536> doc;
+    DeserializationError error = deserializeJson(doc, http.getString());
+    if (error)
+    {
+      Serial.print(F("deserializeJson() failed: "));
+      Serial.println(error.f_str());
+      return;
+    }
+
+    JsonObject result = doc["resourceSets"][0]["resources"][0];
+    float travelDurationTraffic = result["travelDurationTraffic"];
+    String travelDurationString = String(travelDurationTraffic / 60) + "m to " + location;
+
+    if (xPos == top)
+    {
+      printToDisplay(travelDurationString.c_str(), display.width() / 2, display.height() * 65 / 100, display.width() / 2, 20, true);
+    }
+    else if (xPos == bottom)
+    {
+      printToDisplay(travelDurationString.c_str(), display.width() / 2, display.height() * 50 / 100, display.width() / 2, 20, true);
+    }
+  }
+  else
+  {
+    Serial.print("Error code: ");
+    Serial.println(httpResponseCode);
+  }
+  http.end();
+}
+
+void getStocks(String stockUrl, String ticker, xPosition xPos)
 {
 
   HTTPClient http;
@@ -249,11 +218,25 @@ void getStocks(String ticker, xPosition xpos)
     float prevClose = chart_result["meta"]["chartPreviousClose"];
 
     String priceString = String(price);
-    String prevCloseString = String(prevClose);
+    String direction = "<";
 
-    printToDisplay(symbol, 40, &Roboto_Bold8pt7b, xpos);
-    printToDisplay(priceString.c_str(), 50, &Roboto_Regular6pt7b, xpos);
-    // printToDisplay(prevCloseString.c_str(), 50);
+    if (price < prevClose)
+    {
+      direction = ">";
+    }
+
+    String value = direction + " " + priceString;
+
+    if (xPos == left)
+    {
+      printToDisplay(symbol, 0, display.height() * 60 / 100, display.width() / 4, 30, true, &Roboto_Bold8pt7b);
+      printToDisplay(value.c_str(), 0, display.height() * 48 / 100, display.width() / 4, 20, true);
+    }
+    else if (xPos == right)
+    {
+      printToDisplay(symbol, display.width() / 4, display.height() * 60 / 100, display.width() / 4, 30, true, &Roboto_Bold8pt7b);
+      printToDisplay(value.c_str(), display.width() / 4, display.height() * 48 / 100, display.width() / 4, 20, true);
+    }
   }
   else
   {
@@ -263,7 +246,7 @@ void getStocks(String ticker, xPosition xpos)
   http.end();
 }
 
-void getQuote()
+void getQuote(const char *quotesUrl)
 {
 
   HTTPClient http;
@@ -284,14 +267,8 @@ void getQuote()
     const char *contentString = doc["content"];
     const char *author = doc["author"];
 
-    // char contentArray[contentString.size() + 1];
-
-    // for (int i = 0; i < sizeof(contentArray); i++)
-    // {
-    //   contentArray[i] = contentString[i];
-    // }
-    printToDisplay(author, 82, &Roboto_Regular6pt7b);
-    printToDisplay(contentString, 70, &Roboto_LightItalic6pt7b);
+    printToDisplay(contentString, 0, display.height() * 25 / 100, display.width(), 25, true, &Roboto_LightItalic6pt7b);
+    printToDisplay(author, 0, display.height() * 14 / 100, display.width(), 15, true);
   }
   else
   {
@@ -310,6 +287,7 @@ void setup()
     return;
   }
   Serial.begin(115200);
+  // Try to mount SPIFFS without formatting on failure
   if (!SPIFFS.begin(false))
   {
     // If SPIFFS does not work, we wait for serial connection...
@@ -339,12 +317,41 @@ void setup()
   Serial.println("SPIFFS has been mounted.");
   SPIFFS.begin();
 
-  GET = true;
-  apmode = EEPROM.read(AP_SET);
-  setupWifi(hostname, ENTERPRISE_MODE);
-  setupWeb();
-  server.begin();
-  // server.enableCORS();
+  // Now that SPIFFS is ready, we can create or load the certificate
+  SSLCert *cert = getCertificate();
+  if (cert == NULL)
+  {
+    Serial.println("Could not load certificate. Stop.");
+    while (true)
+      ;
+  }
+
+  server = new HTTPSServer(cert);
+
+  // We register the SPIFFS handler as the default node, so every request that does
+  // not hit any other node will be redirected to the file system.
+  ResourceNode *spiffsNode = new ResourceNode("", "", &handleSPIFFS);
+  server->setDefaultNode(spiffsNode);
+
+  // Add a handler that serves the current system uptime at GET /api/uptime
+  ResourceNode *getWifiNode = new ResourceNode("/api/wifi", "GET", &handleGetWifi);
+  server->registerNode(getWifiNode);
+  ResourceNode *postWifiNode = new ResourceNode("/api/wifi", "POST", &handlePostWifi);
+  server->registerNode(postWifiNode);
+
+  GET_QUOTE = true;
+  GET_STOCKS = true;
+  GET_TRAVEL_TIME = true;
+
+  apMode = EEPROM.read(AP_SET);
+  setupWifi(hostname, apMode, ENTERPRISE_MODE);
+
+  Serial.println("Starting server...");
+  server->start();
+  if (server->isRunning())
+  {
+    Serial.println("Server ready.");
+  }
 
   display.init(115200);
 
@@ -366,31 +373,41 @@ void loop()
     EEPROM.commit();
     ESP.restart();
   }
-  server.handleClient();
-  if (apmode == 0)
+
+  if (apMode == 0)
   {
     if (WiFi.status() == WL_CONNECTED)
     {
       String ip = WiFi.localIP().toString();
-      String ipString = "WiFi addr: " + ip;
-      printToDisplay(ipString.c_str(), 95, &Roboto_Regular4pt7b, left);
-
-      if (GET)
+      String ipString = "IP: " + ip;
+      printToDisplay(ipString.c_str(), 0, 0, display.width() / 2, 10, true, &Roboto_Regular4pt7b);
+      if (GET_QUOTE)
       {
-        getQuote();
-        getStocks("ET.TO", left);
-        getStocks("BTC-CAD", right);
-        GET = false;
+        getQuote(quotesUrl);
+        GET_QUOTE = false;
+      }
+      if (GET_STOCKS)
+      {
+        getStocks(stockUrl, "ET.TO", left);
+        getStocks(stockUrl, "BTC-CAD", right);
+        GET_STOCKS = false;
+      }
+      if (GET_TRAVEL_TIME)
+      {
+        getTravelTime(tavelTimeUrl, "home", top);
+        getTravelTime(tavelTimeToGymUrl, "the gym", bottom);
+        GET_TRAVEL_TIME = false;
       }
     }
     else
     {
-      printToDisplay("No WiFi", 95, &Roboto_Regular4pt7b, left);
+      printToDisplay("No WiFi", 0, 0, display.width() / 2, 10, true, &Roboto_Regular4pt7b);
     }
   }
   else
   {
+    server->loop();
     String statusString = "Hostname: " + hostname + "    IP: 192.168.4.1";
-    printToDisplay(statusString.c_str(), 95, &Roboto_Regular4pt7b, left);
+    printToDisplay(statusString.c_str(), 0, 0, display.width(), 10, true, &Roboto_Regular4pt7b);
   }
 };

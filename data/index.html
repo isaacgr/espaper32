@@ -47,7 +47,7 @@
     </div>
     <script>
       window.onload = function (event) {
-        fetch(`${window.location.origin}/wifi`, {
+        fetch(`${window.location.origin}/api/wifi`, {
           method: "GET"
         })
           .then((response) => response.json())
@@ -72,7 +72,7 @@
           var identity = document.getElementById("identity").value;
           document.getElementById("wifi-button").disabled = true;
           fetch(
-            `${window.location.origin}/wifi?ssid=${ssid}&pass=${pass}&username=${username}&identity=${identity}`,
+            `${window.location.origin}/api/wifi?ssid=${ssid}&pass=${pass}&username=${username}&identity=${identity}`,
             {
               method: "POST"
             }
