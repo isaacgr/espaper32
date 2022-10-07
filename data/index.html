@@ -46,22 +46,22 @@
       </div>
     </div>
     <script>
-      window.onload = function (event) {
-        fetch(`${window.location.origin}/api/wifi`, {
-          method: "GET"
-        })
-          .then((response) => response.json())
-          .then((data) => {
-            document.getElementById("ssid").value = data.ssid;
-            document.getElementById("password").value = data.password;
-            document.getElementById("username").value = data.username;
-            document.getElementById("identity").value = data.identity;
-          })
-          .catch((error) => {
-            setError(error);
-            alert("Unable to get wifi credentials");
-          });
-      };
+      // window.onload = function (event) {
+      //   fetch(`${window.location.origin}/api/wifi`, {
+      //     method: "GET"
+      //   })
+      //     .then((response) => response.json())
+      //     .then((data) => {
+      //       document.getElementById("ssid").value = data.ssid;
+      //       document.getElementById("password").value = data.password;
+      //       document.getElementById("username").value = data.username;
+      //       document.getElementById("identity").value = data.identity;
+      //     })
+      //     .catch((error) => {
+      //       setError(error);
+      //       alert("Unable to get wifi credentials");
+      //     });
+      // };
       document
         .getElementById("wifi-button")
         .addEventListener("click", function (event) {

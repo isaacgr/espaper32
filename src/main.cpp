@@ -8,7 +8,7 @@
 #include "defines.h"
 #include "wifi_utils.h"
 #include "eeprom_utils.h"
-#include "https.h"
+// #include "https.h"
 
 #include <GxEPD2_BW.h>
 #include <Fonts/Roboto_Regular4pt7b.h>
@@ -46,7 +46,7 @@ const char *tavelTimeToGymUrl = "https://dev.virtualearth.net/REST/V1/Routes/Dri
 String stockUrl = "https://query1.finance.yahoo.com/v8/finance/chart/";
 String token = "?interval=1d";
 
-HTTPSServer *server;
+// HTTPSServer *server;
 
 void IRAM_ATTR timer1_ISR(void)
 {
@@ -318,26 +318,25 @@ void setup()
   SPIFFS.begin();
 
   // Now that SPIFFS is ready, we can create or load the certificate
-  SSLCert *cert = getCertificate();
-  if (cert == NULL)
-  {
-    Serial.println("Could not load certificate. Stop.");
-    while (true)
-      ;
-  }
+  // SSLCert *cert = getCertificate();
+  // if (cert == NULL)
+  // {
+  //   Serial.println("Could not load certificate. Stop.");
+  //   while (true)
+  //     ;
+  // }
 
-  server = new HTTPSServer(cert);
+  // server = new HTTPSServer(cert);
 
   // We register the SPIFFS handler as the default node, so every request that does
   // not hit any other node will be redirected to the file system.
-  ResourceNode *spiffsNode = new ResourceNode("", "", &handleSPIFFS);
-  server->setDefaultNode(spiffsNode);
+  // ResourceNode *spiffsNode = new ResourceNode("", "", &handleSPIFFS);
+  // server->setDefaultNode(spiffsNode);
 
-  // Add a handler that serves the current system uptime at GET /api/uptime
-  ResourceNode *getWifiNode = new ResourceNode("/api/wifi", "GET", &handleGetWifi);
-  server->registerNode(getWifiNode);
-  ResourceNode *postWifiNode = new ResourceNode("/api/wifi", "POST", &handlePostWifi);
-  server->registerNode(postWifiNode);
+  // ResourceNode *getWifiNode = new ResourceNode("/api/wifi", "GET", &handleGetWifi);
+  // server->registerNode(getWifiNode);
+  // ResourceNode *postWifiNode = new ResourceNode("/api/wifi", "POST", &handlePostWifi);
+  // server->registerNode(postWifiNode);
 
   GET_QUOTE = true;
   GET_STOCKS = true;
@@ -346,12 +345,12 @@ void setup()
   apMode = EEPROM.read(AP_SET);
   setupWifi(hostname, apMode, ENTERPRISE_MODE);
 
-  Serial.println("Starting server...");
-  server->start();
-  if (server->isRunning())
-  {
-    Serial.println("Server ready.");
-  }
+  // Serial.println("Starting server...");
+  // server->start();
+  // if (server->isRunning())
+  // {
+  //   Serial.println("Server ready.");
+  // }
 
   display.init(115200);
 
@@ -406,7 +405,7 @@ void loop()
   }
   else
   {
-    server->loop();
+    // server->loop();
     String statusString = "Hostname: " + hostname + "    IP: 192.168.4.1";
     printToDisplay(statusString.c_str(), 0, 0, display.width(), 10, true, &Roboto_Regular4pt7b);
   }

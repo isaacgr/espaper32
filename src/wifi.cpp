@@ -5,15 +5,8 @@
 #include "esp_wpa2.h"
 #include "wifi_utils.h"
 #include "defines.h"
+#include "secrets.h"
 
-// AP mode password
-char WiFiAPPSK[] = "ledwifi32";
-
-// SSID to connect to
-char ssid[] = "VIRGIN559";
-char identity[] = "";
-char username[] = "";
-char password[] = "412C7934";
 char mdns_name[] = "isaac-epaper";
 
 char *toCharArray(String str)
@@ -80,36 +73,33 @@ void setupWifi(String hostname, int apMode, int enterpriseModePin)
     WiFi.onEvent(WiFiStationDisconnected, SYSTEM_EVENT_STA_DISCONNECTED);
     WiFi.mode(WIFI_STA);
     WiFi.disconnect(true);
+    Serial.print("MAC >> ");
+    Serial.println(WiFi.macAddress());
     Serial.println("Wait for WiFi... ");
-
     if (EEPROM.read(WIFI_SET) == 1)
     {
       int idIndex = EEPROM.read(SSID_INDEX);
-      char *ssid = toCharArray(EEPROM.readString(idIndex));
+      strcpy(ssid, toCharArray(EEPROM.readString(idIndex)));
       int passwordIndex = EEPROM.read(PASSWORD_INDEX);
-      char *password = toCharArray(EEPROM.readString(passwordIndex));
+      strcpy(password, toCharArray(EEPROM.readString(passwordIndex)));
       int usernameIndex = EEPROM.read(USERNAME_INDEX);
-      char *username = toCharArray(EEPROM.readString(usernameIndex));
+      strcpy(username, toCharArray(EEPROM.readString(usernameIndex)));
       int identityIndex = EEPROM.read(IDENTITY_INDEX);
-      char *identity = toCharArray(EEPROM.readString(identityIndex));
-
-      if (digitalRead(enterpriseModePin))
-      {
-        Serial.println("Enterprise wifi mode");
-        esp_wpa2_config_t config = WPA2_CONFIG_INIT_DEFAULT();
-        // This part of the code is taken from the oficial wpa2_enterprise example from esp-idf
-        ESP_LOGI(TAG, "Setting WiFi configuration SSID %s...", wifi_config.sta.ssid);
-        ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-        ESP_ERROR_CHECK(esp_wifi_sta_wpa2_ent_set_identity((uint8_t *)identity, strlen(identity)));
-        ESP_ERROR_CHECK(esp_wifi_sta_wpa2_ent_set_username((uint8_t *)username, strlen(username)));
-        ESP_ERROR_CHECK(esp_wifi_sta_wpa2_ent_set_password((uint8_t *)password, strlen(password)));
-        ESP_ERROR_CHECK(esp_wifi_sta_wpa2_ent_enable(&config));
-        WiFi.begin(ssid);
-      }
-      else
-      {
-        WiFi.begin(ssid, password);
-      }
+      strcpy(identity, toCharArray(EEPROM.readString(identityIndex)));
+    }
+    if (digitalRead(enterpriseModePin))
+    {
+      Serial.println("Enterprise wifi mode");
+      esp_wpa2_config_t config = WPA2_CONFIG_INIT_DEFAULT();
+      // This part of the code is taken from the oficial wpa2_enterprise example from esp-idf
+      ESP_LOGI(TAG, "Setting WiFi configuration SSID %s...", wifi_config.sta.ssid);
+      ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+      ESP_ERROR_CHECK(esp_wifi_sta_wpa2_ent_set_ca_cert((uint8_t *)incommon_ca, strlen(incommon_ca) + 1));
+      ESP_ERROR_CHECK(esp_wifi_sta_wpa2_ent_set_identity((uint8_t *)identity, strlen(identity)));
+      ESP_ERROR_CHECK(esp_wifi_sta_wpa2_ent_set_username((uint8_t *)username, strlen(username)));
+      ESP_ERROR_CHECK(esp_wifi_sta_wpa2_ent_set_password((uint8_t *)password, strlen(password)));
+      ESP_ERROR_CHECK(esp_wifi_sta_wpa2_ent_enable(&config));
+      WiFi.begin(ssid);
     }
     else
     {
